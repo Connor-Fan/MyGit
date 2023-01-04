@@ -5,7 +5,7 @@ import psutil
 import argparse
 import datetime
 import pyautogui
-import dash, mylog
+import battery, dash, mylog
 from pywinauto import Application
 
 # Globals section: define global variables in here
@@ -109,6 +109,7 @@ def failstop(dev, count):
         mylog.error_msg(f'Can not find the txt file of {devlist_ac_pass_path}')
         mylog.error_msg(f'Can not find the txt file of {devlist_dc_fail_path}')
         mylog.error_msg(f'Can not find the txt file of {devlist_ac_fail_path}')
+        mylog.debug_msg(f'The counter of curr_dict[stress_cycle] is {count}')
         return 1, None
     
     devlis = dash.read_txt_file(devicemanager_list_path)
@@ -182,8 +183,6 @@ def check_uac_flag():
     Returns:
         (bool, bool): return code, a flag of EnableLUA
     """
-    
-    mylog.debug_msg('Entry point of check_uac_flag()...')
 
     rc, std_out, std_err = dash.runcmd('REG QUERY HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ /v EnableLUA')
     if rc:
@@ -201,8 +200,6 @@ def check_uac_flag():
             elif '0x0' in line:
                 mylog.info_msg(f'EnableLUA is disabled. Set EnableLUA to be False')
                 uac_flag = False
-    
-    mylog.debug_msg('End point of check_uac_flag()...')
     
     return 0, uac_flag
 
@@ -283,13 +280,15 @@ def parse_cold_boot_argument():
         return 1, None, None 
 
     mylog.info_msg(f'cold_boot_num = {cold_boot_num}, cold_boot_time = {cold_boot_time}')
+    
+    ACLineStatus, _, _, _, _, _ = battery.check_power()
 
-    if cold_boot_time < 120:
-        print(f'For CB, sleep time must be 120 seconds or greater')
-        mylog.error_msg(f'For CB, sleep time must be 120 seconds or greater')
-        return 1, cold_boot_num, cold_boot_time
-    else:
+    if cold_boot_time >= 120 and ACLineStatus == 1:
         return 0, cold_boot_num, cold_boot_time
+    else:
+        print(f'For CB, sleep time must be more than 120s and insert AC')
+        mylog.error_msg(f'For CB, sleep time must be more than 120s and insert AC')
+        return 1, _, _
 
 def parse_warm_boot_argument():
     """
@@ -534,7 +533,6 @@ def cleanup():
         (bool): no need return 
     """
     
-    mylog.debug_msg('Entry point of cleanup()...')
     print("clean up now...")
     
     # clean log files in the device compare folder
@@ -670,8 +668,6 @@ def cleanup():
         mylog.error_msg(f'Can not clean the Windows Event of Security! Error: {std_err}')
         # no need return 1
 
-    mylog.debug_msg('End point of cleanup()...')
-
     return 0
 
 def backup_args(curr_dict):
@@ -684,8 +680,6 @@ def backup_args(curr_dict):
     Returns:
         (bool, str): return code, backup test mode
     """
-
-    mylog.debug_msg('Entry point of backup_args()...')
     
     curr_args = []  
     # get current args
@@ -699,8 +693,6 @@ def backup_args(curr_dict):
     else:
         mylog.error_msg(f'Can not read curr_dict["curr_test_args"]! Error: arr_args is {arr_args}')
         return 1, None
-
-    mylog.debug_msg('End point of backup_args()...')
     
     return 0, curr_args
 
