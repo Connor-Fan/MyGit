@@ -1,11 +1,11 @@
 ===========================================================================
-Tool version 1.5.0, Python pakage 3.11.0, Product version 10.0.22621.755
+Tool version 1.6.0, Python pakage 3.8.10, Product version 10.0.22621.1992
 This is README.txt, the class material's top-level user guide
 Author: Kanan Fan, https://www.youtube.com/channel/UCoSrY_IQQVpmIRZ9Xf-y93g
 ===========================================================================
 
 Requirement:
-Install python-3.11.0-amd64.exe and WDTF
+Please install python-3.8.10-amd64.exe and the latest WDTF before run the stress tool
 Note: please add an environment variable when you are installing Python
 
 Command:

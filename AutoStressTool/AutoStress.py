@@ -11,11 +11,11 @@ from pywinauto import Application
 # Globals section: define global variables in here
 
 # Tool version
-tool_version = "1.5.0"
+tool_version = "1.6.0"
 # Python compiler version
-python_version = "3.11.0"
+python_version = "3.8.10"
 # UIAutomationCore.dll of product version
-product_version = "10.0.22621.755"
+product_version = "10.0.22621.1992"
 
 # Get a directory of your current test path
 test_path = os.getcwd()
@@ -50,6 +50,8 @@ device_compare_path = os.path.join(tools_dir, r'DeviceCompareTest\DeviceCompare.
 pwrtest_path = os.path.join(tools_dir, r"PwrTest\pwrtest.exe")
 # PlatCfg64W.exe path
 platcfgw_exe_path = os.path.join(tools_dir, r"PlatCfg64W\PlatCfg64W.exe")
+# PlatCfg2W64.exe path
+platcfg2w_exe_path = os.path.join(tools_dir, r"PlatCfg64W\PlatCfg2W64.exe")
 # The json file to save temporary values (command line arguments, ...)
 current_state_path = os.path.join(test_path, "current_state.json")
 
@@ -267,7 +269,7 @@ def parse_cold_boot_argument():
     
     cold_boot_num = default_cold_boot
     cold_boot_time = default_cold_boot_sec
-   
+
     if args.cb is None:
         pass
     elif len(args.cb) == 1:
@@ -280,15 +282,26 @@ def parse_cold_boot_argument():
         return 1, None, None 
 
     mylog.info_msg(f'cold_boot_num = {cold_boot_num}, cold_boot_time = {cold_boot_time}')
-    
-    ACLineStatus, _, _, _, _, _ = battery.check_power()
 
-    if cold_boot_time >= 120 and ACLineStatus == 1:
+    ACLineStatus, _, _, _, _, _ = battery.check_power()
+    if cold_boot_time >= 120 and cold_boot_num > 0:
+        if ACLineStatus:
+            return 0, cold_boot_num, cold_boot_time
+        else:
+            print(f'Please insert your AC for Auto On Day')
+            mylog.error_msg(f'Please insert your AC for Auto On Day')
+            return 1, _, _
+    elif cold_boot_time < 120 and cold_boot_num > 0:
+        print(f'For CB, sleep time must be more than 120s')
+        mylog.error_msg(f'For CB, sleep time must be more than 120s')
+        return 1, _, _
+    elif ACLineStatus:
+        # return the defautl value of 0, 120.
         return 0, cold_boot_num, cold_boot_time
     else:
-        print(f'For CB, sleep time must be more than 120s and insert AC')
-        mylog.error_msg(f'For CB, sleep time must be more than 120s and insert AC')
-        return 1, _, _
+        print(f'Your system is DC only! Please check whether you need to insert AC or not')
+        # return the defautl value of 0, 120.
+        return 0, cold_boot_num, cold_boot_time
 
 def parse_warm_boot_argument():
     """
@@ -605,6 +618,7 @@ def cleanup():
         rc, pid_devicecompare = get_process_id_by_name("DeviceCompare.exe")
 
         if rc == 0 and pid_devicecompare is not None:
+            print(f'Start turning of Device Compare...')
             app = Application(backend="uia").connect(title_re="Device Compare")
             app.kill()
 
@@ -632,7 +646,7 @@ def cleanup():
         print(f'Can not clean files in {test_path}! Error: {str(err)}')
         # no need return 1
 
-    print(f'Reset power plans...')
+    print(f'Start resetting power plans...')
     mylog.info_msg("Reset power plans...")
     # reset and restore power plans to default settings   
     rc, _, std_err = dash.runcmd('powercfg restoredefaultschemes')
@@ -640,6 +654,8 @@ def cleanup():
         print(f'Can not reset power plans! Error: {std_err}')
         mylog.error_msg(f'Can not reset power plans! Error: {std_err}')
         # no need return 1
+    else:
+        print(f'Reset restore power plans is successful!')
 
     print(f'Clean Windows Events now...')
     mylog.info_msg("Clean Windows Events now...")
@@ -649,25 +665,67 @@ def cleanup():
         print(f'Can not clean the Windows Event of Application! Error: {std_err}')
         mylog.error_msg(f'Can not clean the Windows Event of Application! Error: {std_err}')
         # no need return 1
+    else:
+        print(f'Clean the Windows Event of Application is successful!')
 
     rc, std_out, std_err = dash.runcmd('wevtutil cl System')
     if rc:
         print(f'Can not clean the Windows Event of System! Error: {std_err}')
         mylog.error_msg(f'Can not clean the Windows Event of System! Error: {std_err}')
         # no need return 1
+    else:
+        print(f'Clean the Windows Event of System is successful!')
 
     rc, std_out, std_err = dash.runcmd('wevtutil cl Setup')
     if rc:
         print(f'Can not clean the Windows Event of Setup! Error: {std_err}')
         mylog.error_msg(f'Can not clean the Windows Event of Setup! Error: {std_err}')
         # no need return 1
+    else:
+        print(f'Clean the Windows Event of Setup is successful!')
 
     rc, std_out, std_err = dash.runcmd('wevtutil cl Security')
     if rc:
         print(f'Can not clean the Windows Event of Security! Error: {std_err}')
         mylog.error_msg(f'Can not clean the Windows Event of Security! Error: {std_err}')
         # no need return 1
+    else:
+        print(f'Clean the Windows Event of Security is successful!')
 
+    print(f'Clean BIOS Events now...')
+    # set the platcfg cmd for clearing BIOS log
+    cmd_bioslog = f"{platcfg2w_exe_path} -set BiosLogClear=Clear"
+    
+    rc, _, std_err = dash.runcmd(cmd_bioslog)
+    if rc == 1 and std_err is not None:
+        print(f'Can not clean BIOS logs with the cmd of {cmd_bioslog}! Error: {std_err}')
+        mylog.error_msg(f'Can not clean BIOS logs with the cmd of {cmd_bioslog}! Error: {std_err}')
+        # no need return 1
+    else:
+        print(f'Clean BIOS logs is successful!')
+        
+    # set the platcfg cmd for clearing thermal log
+    cmd_thermallog = f"{platcfg2w_exe_path} -set ThermalLogClear=Clear"
+    
+    rc, _, std_err = dash.runcmd(cmd_thermallog)
+    if rc == 1 and std_err is not None:
+        print(f'Can not clean thermal logs with the cmd of {cmd_thermallog}! Error: {std_err}')
+        mylog.error_msg(f'Can not clean thermal logs with the cmd of {cmd_thermallog}! Error: {std_err}')
+        # no need return 1
+    else:
+        print(f'Clean thermal logs is successful!')
+
+    # set the platcfg cmd for clearing power log
+    cmd_powerlog = f"{platcfg2w_exe_path} -set PowerLogClear=Clear"
+    
+    rc, _, std_err = dash.runcmd(cmd_powerlog)
+    if rc == 1 and std_err is not None:
+        print(f'Can not clean power logs with the cmd of {cmd_powerlog}! Error: {std_err}')
+        mylog.error_msg(f'Can not clean power logs with the cmd of {cmd_powerlog}! Error: {std_err}')
+        # no need return 1
+    else:
+        print(f'Clean power logs is successful!')
+        
     return 0
 
 def backup_args(curr_dict):
@@ -704,38 +762,57 @@ def setup(curr_dict):
         (bool): no need return
     """
 
-    mylog.info_msg("setup environment params...")
+    print(f'Start setting up environment params...')
+    mylog.info_msg("Start setting up environment params...")
     
     rc, _, std_err = dash.runcmd('powercfg -change -standby-timeout-dc 0')
     if rc:
+        print(f'Can not set the powercfg of -standby-timeout-dc 0! Error: {std_err}')
         mylog.error_msg(f'Can not set the powercfg of -standby-timeout-dc 0! Error: {std_err}')
-        return 1
+        # no need return 1
+    else:
+        print(f'Set the powercfg of -standby-timeout-dc 0 is successful!')
         
     rc, std_out, std_err = dash.runcmd('powercfg -change -standby-timeout-ac 0')
     if rc:
+        print(f'Can not set the powercfg of -standby-timeout-ac 0! Error: {std_err}')
         mylog.error_msg(f'Can not set the powercfg of -standby-timeout-ac 0! Error: {std_err}')
-        return 1
+        # no need return 1
+    else:
+        print(f'Set the powercfg of -standby-timeout-ac 0 is successful!')
         
     rc, std_out, std_err = dash.runcmd('powercfg -change -monitor-timeout-dc 0')
     if rc:
+        print(f'Can not set the powercfg of -monitor-timeout-dc 0! Error: {std_err}')
         mylog.error_msg(f'Can not set the powercfg of -monitor-timeout-dc 0! Error: {std_err}')
-        return 1
+        # no need return 1
+    else:
+        print(f'Set the powercfg of -monitor-timeout-dc 0 is successful!')
         
     rc, std_out, std_err = dash.runcmd('powercfg -change -monitor-timeout-ac 0')
     if rc:
+        print(f'Can not set the powercfg of -monitor-timeout-ac 0! Error: {std_err}')
         mylog.error_msg(f'Can not set the powercfg of -monitor-timeout-ac 0! Error: {std_err}')
-        return 1
+        # no need return 1
+    else:
+        print(f'Set the powercfg of -monitor-timeout-ac 0 is successful!')
  
     # config memory dump settings in Startup and Recovery 
     rc, std_out, std_err = dash.runcmd('wmic recoveros set AutoReboot = False')
     if rc:
+        print(f'Can not set the checkbox of Automatically Restart to be False! Error: {std_err}')
         mylog.error_msg(f'Can not set the checkbox of Automatically Restart to be False! Error: {std_err}')
         return 1
+    else:
+        print(f'Set the checkbox of Automatically Restart to be False is successful!')
 
     rc, std_out, std_err = dash.runcmd('wmic recoveros set DebugInfoType = 1')
     if rc:
+        print(f'Can not set the memory dump to be complete! Error: {std_err}')
         mylog.error_msg(f'Can not set the memory dump to be complete! Error: {std_err}')
         return 1
+    else:
+        print(f'Set the memory dump to be complete is successful!')
  
     rc, uac_flag = check_uac_flag()
     if rc:
