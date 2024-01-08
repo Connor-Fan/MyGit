@@ -1,6 +1,6 @@
 import os
 import json
-import mylog
+import runtime
 from locale import getdefaultlocale
 from subprocess import run
 
@@ -29,7 +29,7 @@ def runcmd(cmd):
             std_err = subprocess.stderr.decode('big5', errors='ignore')
             
     except Exception as err:
-        mylog.handle_exception(f'Can not run the cmd of {cmd}! Error: {err}')
+        runtime.handle_exception(f'Can not run the cmd of {cmd}! Error: {err}')
         return 1, None, None
         
     return return_code, std_out, std_err
@@ -46,7 +46,7 @@ def read_txt_file(src):
     """
 
     if not os.path.exists(src):
-        mylog.error_msg(f'Can not find the txt file of {src}')
+        runtime.error_msg(f'Can not find the txt file of {src}')
         return 1
 
     try:
@@ -55,7 +55,7 @@ def read_txt_file(src):
             data = fin.read()
 
     except Exception as err:
-        mylog.handle_exception(f'Can not read the file of {src}! Error: {err}')
+        runtime.handle_exception(f'Can not read the file of {src}! Error: {err}')
         return 1
 
     return data
@@ -72,7 +72,7 @@ def read_json_file(src):
     """
 
     if not os.path.exists(src):
-        mylog.error_msg(f'Can not find the json file of {src}')
+        runtime.error_msg(f'Can not find the json file of {src}')
         return 1
 
     try:
@@ -81,7 +81,7 @@ def read_json_file(src):
             json_dict = json.load(fin)
 
     except Exception as err:
-        mylog.handle_exception(f'Can not read the file of {src}! Error: {err}')
+        runtime.handle_exception(f'Can not read the file of {src}! Error: {err}')
         return 1
 
     return json_dict
@@ -104,7 +104,7 @@ def write_json_file(src, json_dict):
             json.dump(json_dict, fout)
 
     except Exception as err:
-        mylog.handle_exception(f'Can not write the json file {src}! Error: {err}')
+        runtime.handle_exception(f'Can not write the json file {src}! Error: {err}')
         return True
 
     return False
