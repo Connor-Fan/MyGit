@@ -3,16 +3,19 @@
 @rem #          請自行更新測試軟體          #
 @rem ########################################
 
+set SIGNTOOL_DIR=DigitalSignature
+set DIST_DIR=dist
+
 @set "params=%*"
 cd /d "%~dp0" && ( if exist "%temp%\getadmin.vbs" del "%temp%\getadmin.vbs" ) && fsutil dirty query %systemdrive% 1>nul 2>nul || (  echo Set UAC = CreateObject^("Shell.Application"^) : UAC.ShellExecute "cmd.exe", "/k cd ""%~sdp0"" && %~s0 %params%", "", "runas", 1 >> "%temp%\getadmin.vbs" && "%temp%\getadmin.vbs" && exit /B )
 
 :: go back to the workplace
 cd /d "%~dp0"
 
-@echo ==========================================================
-@echo ======Please enter 1 or 2 to be with/without in ICON======
-@echo =========(1)within ICON (2)without ICON (3)clean =========
-@echo ==========================================================
+@echo ================================================================
+@echo ======Please enter 1, 2, 3 or 4 to select your next action======
+@echo ==(1)Within ICON (2)Without ICON (3)Clean (4)Digital Signature==
+@echo ================================================================
 
 @set /p var=PleaseEnterVar:
 if "%var%" == "1" (
@@ -21,6 +24,8 @@ if "%var%" == "1" (
     goto :Without
 ) else if "%var%"== "3" (
     goto :Clean
+) else if "%var%"== "4" (
+    goto :Sign
 ) else (
     goto :Error
 )
@@ -39,7 +44,20 @@ exit
 rmdir /s /q build && echo Deletion Successful
 rmdir /s /q dist && echo Deletion Successful
 del AutoStress.spec && echo Deletion Successful
+cd %SIGNTOOL_DIR%
+del AutoStress.exe && echo Deletion Successful
+pause
+exit
 
+:Sign
+cd %DIST_DIR%
+copy AutoStress.exe %~dp0%SIGNTOOL_DIR%
+echo File copied to dist folder successfully!
+:: go back to the workplace
+cd /d "%~dp0"
+cd %SIGNTOOL_DIR%
+signtool.exe sign /fd certHash /f YourCertificate.pfx /p ZAQ!2wsx AutoStress.exe
+signtool.exe verify /pa /v AutoStress.exe
 pause
 exit
 
