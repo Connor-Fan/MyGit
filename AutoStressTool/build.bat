@@ -11,16 +11,18 @@ cd /d "%~dp0"
 
 @echo ==========================================================
 @echo ======Please enter 1 or 2 to be with/without in ICON======
-@echo ==============(1)within ICON (2)without ICON==============
+@echo =========(1)within ICON (2)without ICON (3)clean =========
 @echo ==========================================================
 
 @set /p var=PleaseEnterVar:
 if "%var%" == "1" (
-	goto :Within
+    goto :Within
 ) else if "%var%"== "2" (
-	goto :Without
+    goto :Without
+) else if "%var%"== "3" (
+    goto :Clean
 ) else (
-	goto :Error
+    goto :Error
 )
 
 :Within
@@ -30,6 +32,14 @@ exit
 
 :Without
 pyinstaller -c -F AutoStress.py --hidden-import win32timezone
+pause
+exit
+
+:Clean
+rmdir /s /q build && echo Deletion Successful
+rmdir /s /q dist && echo Deletion Successful
+del AutoStress.spec && echo Deletion Successful
+
 pause
 exit
 
