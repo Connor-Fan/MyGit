@@ -14,7 +14,7 @@ pyautogui.FAILSAFE = False
 # Globals section: define global variables in here
 
 # Tool version
-tool_version = "1.8.0"
+tool_version = "1.9.0"
 # Python compiler version
 python_version = "3.8.10"
 # UIAutomationCore.dll of product version
@@ -60,6 +60,8 @@ platcfg2w_exe_path = os.path.join(tools_dir, r"PlatCfg64W\PlatCfg2W64.exe")
 # The json file to save temporary values (command line arguments, ...)
 current_state_path = os.path.join(test_path, "current_state.json")
 
+# Default delay time each power cycle
+default_delay_time_sec = 0
 # Default of standby (times)
 default_standby = 0
 # Default of standby time (in second)
@@ -70,8 +72,6 @@ default_hibernate = 0
 default_hibernate_sec = 60
 # Default of warm boot (times)
 default_warm_boot = 0
-# Default time in second of warm boot
-default_warm_boot_sec = 60
 # Default of cold boot (times)
 default_cold_boot = 0
 # Default time in second of cold boot
@@ -308,32 +308,6 @@ def parse_cold_boot_argument():
         # return the defautl value of 0, 120.
         return 0, cold_boot_num, cold_boot_time
 
-def parse_warm_boot_argument():
-    """
-    To parse warm boot argument from command line
-    
-    Returns:
-        tuple(int, int)
-    """
-    
-    warm_boot_num = default_warm_boot
-    warm_boot_time = default_warm_boot_sec
-   
-    if args.wb is None or len(args.wb) == 0:
-        pass  # Using default wb values
-    elif len(args.wb) == 1:
-        warm_boot_num = abs(args.wb[0])
-    elif len(args.wb) == 2:
-        warm_boot_num = abs(args.wb[0])
-        warm_boot_time = abs(args.wb[1])
-    else:
-        mylog.error_msg(f'Please check the help info for how to type a correct arg! Error: {args.wb}')
-        return 1, None, None 
-
-    mylog.info_msg(f'warm_boot_num = {warm_boot_num}, warm_boot_time = {warm_boot_time}')
-
-    return 0, warm_boot_num, warm_boot_time
-
 def parse_hibernate_argument():
     """
     To parse hibernate argument from command line
@@ -415,14 +389,16 @@ def parse_cmdline(cmd_line=None):
                     help='Enter hibernation mode multiple times, each time staying in hibernation for a specified duration.\n'
                         'Usage: --hibernate 3 60 (up to 2 iterations)\n'
                         'This means hibernate for 3 times, each time for 60 seconds before waking up the system.')
-    parser.add_argument('--wb', nargs=2, dest='wb', default=[], type=int, metavar=('iterations', 'duration'),
+    parser.add_argument('--wb', dest='wb', default=None, type=int,
                     help='Perform warm boot multiple times, each time restarting the system after a specified duration.\n'
-                        'Usage: --wb 3 60 (up to 2 iterations)\n'
-                        'This means warm boot for 3 times, each time waiting for 60 seconds before restarting the system.')
+                        'Usage: --wb 3 (up to 2 iterations)\n'
+                        'This means warm boot for 3 times.')
     parser.add_argument('--cb', nargs=2, dest='cb', default=[], type=int, metavar=('iterations', 'duration'),
                     help='Perform cold boot multiple times, each time powering down the system for a specified duration before waking it up.\n'
                         'Usage: --cb 3 120 (up to 2 iterations)\n'
                         'This means cold boot for 3 times, each time powering down for 120 seconds before waking up the system.')
+    parser.add_argument('--delay', dest='delay', default=None, type=int,
+                    help='Set the delay time (in seconds) before each power cycle.')
     if cmd_line:
         args = parser.parse_args(cmd_line)
     else:
@@ -487,13 +463,16 @@ def generate_test_mode(args):
     if args.stop is not None and len(args.stop) > 0:
         arr_test_args.append(f'--stop')
 
+    if args.delay is not None:
+        arr_test_args.append(f'--delay')
+    
     if args.standby is not None and len(args.standby) > 0:
         arr_test_args.append(f'--standby')
 
     if args.hibernate is not None and len(args.hibernate) > 0:
         arr_test_args.append(f'--hibernate')
 
-    if args.wb is not None and len(args.wb) > 0:
+    if args.wb is not None:
         arr_test_args.append(f'--wb')
 
     if args.cb is not None and len(args.cb) > 0:
@@ -544,9 +523,9 @@ def set_current_test_mode(test_args, count, device):
     curr_dict['hibernate_num'] = hibernate_num
     curr_dict['hibernate_time'] = hibernate_time
     curr_dict['warm_boot_num'] = wb_num
-    curr_dict['warm_boot_time'] = wb_time
     curr_dict['cold_boot_num'] = cb_num
     curr_dict['cold_boot_time'] = cb_time
+    curr_dict['delay_time'] = delay_time
 
     if dash.write_json_file(current_state_path, curr_dict):
         mylog.error_msg(f'Can not write the current args into {current_state_path}')
@@ -971,9 +950,15 @@ def setup(curr_dict):
             new_dev = stop_dev
 
         if new_dev is not None and len(new_dev) > 0:
-            backup_cmd = f'{os.path.basename(sys.argv[0])} ' + f'{backup_cmd}' + f'--stop {new_dev} --standby {standby_num} {standby_time} --hibernate {hibernate_num} {hibernate_time} --wb {wb_num} {wb_time} --cb {cb_num} {cb_time}'
+            backup_cmd = f'{os.path.basename(sys.argv[0])} ' + f'{backup_cmd}' + \
+                         f'--stop {new_dev} --standby {standby_num} {standby_time} ' \
+                         f'--hibernate {hibernate_num} {hibernate_time} ' \
+                         f'--wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         else:
-            backup_cmd = f'{os.path.basename(sys.argv[0])} ' + f'{backup_cmd}' + f'--standby {standby_num} {standby_time} --hibernate {hibernate_num} {hibernate_time} --wb {wb_num} {wb_time} --cb {cb_num} {cb_time}'
+            backup_cmd = f'{os.path.basename(sys.argv[0])} ' + f'{backup_cmd}' + \
+                         f'--standby {standby_num} {standby_time} ' \
+                         f'--hibernate {hibernate_num} {hibernate_time} ' \
+                         f'--wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
 
         mylog.info_msg(f'The backup cmd is {backup_cmd}')
         rc = create_batch_file(backup_cmd)    
@@ -982,7 +967,7 @@ def setup(curr_dict):
             return 1
 
         print('Restart your system for reseting UAC settings')
-        time.sleep(2)
+        time.sleep(1)
         cmd = "shutdown -r -t 0 -f"
         rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
@@ -1006,7 +991,7 @@ def do_standby():
     if standby_num > 0 and standby_time > 0:
         for i in range(0, standby_num):
             # set the delay time of 65s for waitting DeviceCompare is ready
-            for i in range(65, 0, -1):
+            for i in range(delay_time, 0, -1):
                 print(f'Wait {i}s to do standby...', end='\r')
                 time.sleep(1)
 
@@ -1026,7 +1011,7 @@ def do_standby():
             print(f'Place your system in standby mode with cmd of {cmd}')
             mylog.info_msg(f'Place your system in standby mode with cmd of {cmd}')
 
-            time.sleep(2)
+            time.sleep(1)
 
             rc, _, std_err = dash.runcmd(cmd)
 
@@ -1094,7 +1079,7 @@ def do_hibernate():
     if hibernate_num > 0 and hibernate_time > 0:
         for i in range(0, hibernate_num):
             # set the delay time of 65s for waitting DeviceCompare is ready
-            for i in range(65, 0, -1):
+            for i in range(delay_time, 0, -1):
                 print(f'Wait {i}s to do hibernate...', end='\r')
                 time.sleep(1)
             
@@ -1124,7 +1109,7 @@ def do_hibernate():
                     print(f'Place system in s:4 mode by command line: {cmd}')
                     mylog.info_msg(f'Place system in Hibernate (s:4) mode by command line: {cmd}')
 
-                    time.sleep(2)
+                    time.sleep(1)
                     rc, _, std_err = dash.runcmd(cmd)
                     if rc == 1 and std_err is not None:
                         mylog.error_msg(f'Can not place your system in hibernate mode with cmd of {cmd}! Error: {std_err}')
@@ -1137,7 +1122,7 @@ def do_hibernate():
                 print(f'Place system in Hibernate mode by command line: {cmd}')
                 mylog.info_msg(f'Place system in Hibernate (s:4) mode by command line: {cmd}')
 
-                time.sleep(2)
+                time.sleep(1)
                 rc, _, std_err = dash.runcmd(cmd)
                 if rc == 1 and std_err is not None:
                     mylog.error_msg(f'Can not place your system in hibernate mode with cmd of {cmd}! Error: {std_err}')
@@ -1199,11 +1184,11 @@ def do_warm_boot():
         (bool): tuple(int[0, 1])
     """
     
-    if wb_num > 0 and wb_time > 0:
+    if wb_num > 0:
         print(f'Start running a warm boot...')
         cmd = "shutdown -r -t 0 -f"
 
-        time.sleep(2)
+        time.sleep(1)
         rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
             mylog.error_msg(f'Can not place your system in warmboot mode with cmd of {cmd}! Error: {std_err}')
@@ -1240,7 +1225,7 @@ def do_cold_boot():
         # CMD Shutdown
         cmd = "shutdown -s -t 0 -f"
 
-        time.sleep(2)
+        time.sleep(1)
         rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
             mylog.error_msg(f'Can not place your system in coldboot mode with cmd of {cmd}! Error: {std_err}')
@@ -1279,7 +1264,7 @@ def test_teardown():
             main_window.wait('visible')
             # initialize x, y coordinate
             pyautogui.moveTo(0, 0, duration=0.25)
-            time.sleep(2)
+            time.sleep(1)
             # stop
             main_window.child_window(title="Stop", auto_id="b_start", control_type="Button").click()
             print(f'Stop DeviceCompare is done')
@@ -1291,7 +1276,6 @@ def test_teardown():
         # no need return 1
 
     print(f'Teardown is done, press any key to exit the program')
-    
     os.system("pause")
     
     return 0
@@ -1317,13 +1301,13 @@ def run_device_compare():
         # initialize x, y coordinate
         pyautogui.moveTo(0, 0, duration=0.25)
         # delay 2s every action
-        time.sleep(2)
+        time.sleep(1)
         # reset
         main_window.child_window(title="Reset", auto_id="b_reset", control_type="Button").click()
-        time.sleep(2)
+        time.sleep(1)
         # sync
         main_window.child_window(title="Sync", auto_id="b_sync", control_type="Button").click()
-        time.sleep(2)
+        time.sleep(1)
         # start
         main_window.child_window(title="Start", auto_id="b_start", control_type="Button").click()
 
@@ -1351,9 +1335,9 @@ def test_main(args, dict, rc):
     hibernate_num = curr_dict['hibernate_num']
     hibernate_time = curr_dict['hibernate_time']
     wb_num = curr_dict['warm_boot_num']
-    wb_time = curr_dict['warm_boot_time']
     cb_num = curr_dict['cold_boot_num']
     cb_time = curr_dict['cold_boot_time']
+    delay_time = curr_dict['delay_time']
 
     # get the current value of stress cycle
     count = curr_dict['stress_cycle']  
@@ -1370,26 +1354,26 @@ def test_main(args, dict, rc):
     mylog.debug_msg(f'In test_main, hibernate_num = {hibernate_num}')
     mylog.debug_msg(f'In test_main, hibernate_time = {hibernate_time}')
     mylog.debug_msg(f'In test_main, warm_boot_num = {wb_num}')
-    mylog.debug_msg(f'In test_main, warm_boot_time = {wb_time}')
     mylog.debug_msg(f'In test_main, cold_boot_num = {cb_num}')
     mylog.debug_msg(f'In test_main, cold_boot_time = {cb_time}')
+    mylog.debug_msg(f'In test_main, delay_time = {delay_time}')
 
-    if wb_num > 0 and wb_time > 0:
-        # set the delay time of wb_time for waitting DeviceCompare is ready
-        for i in range(wb_time, 0, -1):
+    if wb_num > 0:
+        # set a delay time to wait for DeviceCompare to be ready
+        for i in range(delay_time, 0, -1):
             print(f'Wait {i}s to do warm boot...', end='\r')
             time.sleep(1)
     elif cb_num > 0 and cb_time > 0:
-        # set the delay time of 65s for waitting DeviceCompare is ready
-        for i in range(65, 0, -1):
+        # set a delay time to wait for DeviceCompare to be ready
+        for i in range(delay_time, 0, -1):
             print(f'Wait {i}s to do cold boot...', end='\r')
             time.sleep(1)
     else:
         # handle for finish test
         print(f'Finished {sys.argv[0]} rc={rc}')
         mylog.info_msg(f'Finished {sys.argv[0]} rc={rc}')
-        # set the delay time of 65s for waitting DeviceCompare is ready
-        for i in range(65, 0, -1):
+        # set a delay time to wait for DeviceCompare to be ready
+        for i in range(delay_time, 0, -1):
             print(f'Wait {i}s to teardown your system...', end='\r')
             time.sleep(1)
 
@@ -1438,13 +1422,13 @@ def test_main(args, dict, rc):
         wb_num = wb_num - 1  
         
         if (new_dev is not None and len(new_dev) > 0) and backup == True:
-            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {new_dev} --wb {wb_num} {wb_time} --cb {cb_num} {cb_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {new_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         elif (new_dev is not None and len(new_dev) > 0) and backup == False:
-            cmd = f'{os.path.basename(sys.argv[0])} --stop {new_dev} --wb {wb_num} {wb_time} --cb {cb_num} {cb_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --stop {new_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         elif (new_dev is None or len(new_dev) == 0) and backup == True:
-            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --wb {wb_num} {wb_time} --cb {cb_num} {cb_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         elif (new_dev is None or len(new_dev) == 0) and backup == False:
-            cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} {wb_time} --cb {cb_num} {cb_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         else:
             mylog.error_msg(f'Return error! Failed in setting the backup command of {cmd}')
             return 1
@@ -1457,13 +1441,13 @@ def test_main(args, dict, rc):
         cb_num = cb_num - 1
 
         if new_dev != None and backup == True:
-            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {new_dev} --wb {wb_num} {wb_time} --cb {cb_num} {cb_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {new_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         elif new_dev != None and backup == False:
-            cmd = f'{os.path.basename(sys.argv[0])} --stop {new_dev} --wb {wb_num} {wb_time} --cb {cb_num} {cb_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --stop {new_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         elif new_dev == None and backup == True:
-            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --wb {wb_num} {wb_time} --cb {cb_num} {cb_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         elif new_dev == None and backup == False:
-            cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} {wb_time} --cb {cb_num} {cb_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         else:
             mylog.error_msg(f'Return error! Failed in setting the backup command of {cmd}')
             return 1
@@ -1489,9 +1473,7 @@ def test_main(args, dict, rc):
 
 # Test Entry point
 if __name__ == '__main__':
-    # This is your entry point
-    # Parse arguments
-    # Calls to test_main(), test_teardown() done here.
+    # Parse arguments, and calls to test_main(), test_teardown() done here.
     # Script should exit back to shell from here using sys.exit(rc)
     try:
         # show the basic information
@@ -1507,7 +1489,12 @@ if __name__ == '__main__':
         if args.cleanup:
             cleanup()
 
-        # get time, num adn device args
+        # get time, num and device args
+        if args.delay:
+            delay_time = abs(args.delay)
+        else:
+            delay_time = default_delay_time_sec
+        
         rc, standby_num, standby_time = parse_standby_argument()
         if rc:
             raise Exception(f'Return error! Failed in parsing --standby arguments')
@@ -1516,9 +1503,10 @@ if __name__ == '__main__':
         if rc:
             raise Exception(f'Return error! Failed in parsing --hibernate arguments')
 
-        rc, wb_num, wb_time = parse_warm_boot_argument()
-        if rc:
-            raise Exception(f'Return error! Failed in parsing --wb arguments')
+        if args.wb:
+            wb_num = abs(args.wb)
+        else:
+            wb_num = default_warm_boot
 
         rc, cb_num, cb_time = parse_cold_boot_argument()
         if rc:
