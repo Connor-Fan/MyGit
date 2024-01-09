@@ -14,7 +14,7 @@ pyautogui.FAILSAFE = False
 # Globals section: define global variables in here
 
 # Tool version
-tool_version = "2.1.0"
+tool_version = "2.2.0"
 # Python compiler version
 python_version = "3.8.10"
 # Get a directory of your current test path
@@ -73,8 +73,6 @@ default_warm_boot = 0
 default_cold_boot = 0
 # Default time in second of cold boot
 default_cold_boot_sec = 120
-# Default stop devices
-default_stop_dev = None
 
 def failstop(dev, count):
     """
@@ -244,7 +242,7 @@ def parse_stop_argument():
         tuple (str)
     """
 
-    stop_dev = default_stop_dev
+    stop_dev = None
 
     if args.stop is None or len(args.stop) == 0:
         pass  # Using default stop values
@@ -373,7 +371,7 @@ def parse_cmdline(cmd_line=None):
     parser.add_argument('--auto', default=None, action='store_true', help='Run DeviceCompare automatically')
     parser.add_argument('--stop', nargs='+', dest='stop', default=[], type=str,
                     help='If DeviceCompare gets negetive results, the autoscript will be stopped.\n'
-                        'Usage: --stop all or --stop "SanDisk USB"\n'
+                        'Usage: --stop all or --stop "SanDisk" "SoundWire Speakers"\n'
                         'Note: Use with --auto to enable the stop functionality. Without --auto, the stop feature will not be active.')
     parser.add_argument('--standby', nargs=2, dest='standby', default=[], type=int, metavar=('iterations', 'duration'),
                     help='Enter standby mode multiple times, each time staying in standby for a specified duration.\n'
@@ -925,27 +923,15 @@ def setup(curr_dict):
             else:
                 pass
 
-        # get devices that you want to stop when they fail
-        stop_dev = curr_dict['stop_device']  
-
-        if stop_dev != None and len(stop_dev) > 0:
-            new_dev = ''
-            for i in range(0, len(stop_dev)):
-                if len(stop_dev) == 1:
-                    new_dev = stop_dev[0]
-                elif len(stop_dev) > 1 and i < len(stop_dev) - 1:
-                    new_dev = new_dev + stop_dev[i] + ' '
-                elif i == len(stop_dev) - 1:
-                    new_dev = new_dev + stop_dev[i]
-                else:
-                    runtime.error_msg(f'Return error! Failed in initializing string. String lenth is {len(stop_dev)}')
-                    return 1
+        # make curr_dict['stop_device'] to be a string and save the data in stop_dev
+        if curr_dict['stop_device'] is not None:
+            stop_dev = " ".join(f"\"{item}\"" for item in curr_dict['stop_device'])
         else:
-            new_dev = stop_dev
+            stop_dev = None
 
-        if new_dev is not None and len(new_dev) > 0:
+        if stop_dev is not None and len(stop_dev) > 0:
             backup_cmd = f'{os.path.basename(sys.argv[0])} ' + f'{backup_cmd}' + \
-                         f'--stop {new_dev} --standby {standby_num} {standby_time} ' \
+                         f'--stop {stop_dev} --standby {standby_num} {standby_time} ' \
                          f'--hibernate {hibernate_num} {hibernate_time} ' \
                          f'--wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         else:
@@ -984,7 +970,7 @@ def do_standby():
     # Place the system into Standby, wait 30 seconds, then resume. Repeat three times
     if standby_num > 0 and standby_time > 0:
         for i in range(0, standby_num):
-            # set the delay time of 65s for waitting DeviceCompare is ready
+            # set the delay time for waitting DeviceCompare is ready
             for i in range(delay_time, 0, -1):
                 print(f'Wait {i}s to do standby...', end='\r')
                 time.sleep(1)
@@ -1039,8 +1025,8 @@ def do_standby():
                 return 1
 
             if args.stop:
-                # set the delay time of 65s for waitting DeviceCompare is ready
-                for i in range(65, 0, -1):
+                # set the delay time for waitting DeviceCompare is ready
+                for i in range(delay_time, 0, -1):
                     print(f'Wait {i}s to make DeviceCompare ready...', end='\r')
                     time.sleep(1)
 
@@ -1072,7 +1058,7 @@ def do_hibernate():
     # Place the system into S4, wait 60 seconds, then resume. Repeat three times
     if hibernate_num > 0 and hibernate_time > 0:
         for i in range(0, hibernate_num):
-            # set the delay time of 65s for waitting DeviceCompare is ready
+            # set the delay time for waitting DeviceCompare is ready
             for i in range(delay_time, 0, -1):
                 print(f'Wait {i}s to do hibernate...', end='\r')
                 time.sleep(1)
@@ -1148,8 +1134,8 @@ def do_hibernate():
                 return 1
 
             if args.stop:
-                # set the delay time of 65s for waitting DeviceCompare is ready
-                for i in range(65, 0, -1):
+                # set the delay time for waitting DeviceCompare is ready
+                for i in range(delay_time, 0, -1):
                     print(f'Wait {i}s to make DeviceCompare ready...', end='\r')
                     time.sleep(1)
 
@@ -1335,8 +1321,11 @@ def test_main(args, dict, rc):
 
     # get the current value of stress cycle
     count = curr_dict['stress_cycle']  
-    # get devices that you want to stop when they fail
-    stop_dev = curr_dict['stop_device']
+    # make curr_dict['stop_device'] to be a string and save the data in stop_dev
+    if curr_dict['stop_device'] is not None:
+        stop_dev = " ".join(f"\"{item}\"" for item in curr_dict['stop_device'])
+    else:
+        stop_dev = None
     # get the backup flag, True or False
     backup = curr_dict['backup_flag']
 
@@ -1352,31 +1341,22 @@ def test_main(args, dict, rc):
     runtime.debug_msg(f'In test_main, cold_boot_time = {cb_time}')
     runtime.debug_msg(f'In test_main, delay_time = {delay_time}')
 
+    # set a delay time to wait for DeviceCompare to be ready
     if wb_num > 0:
-        # set a delay time to wait for DeviceCompare to be ready
         for i in range(delay_time, 0, -1):
             print(f'Wait {i}s to do warm boot...', end='\r')
             time.sleep(1)
     elif cb_num > 0 and cb_time > 0:
-        # set a delay time to wait for DeviceCompare to be ready
         for i in range(delay_time, 0, -1):
             print(f'Wait {i}s to do cold boot...', end='\r')
             time.sleep(1)
     else:
-        # handle for finish test
-        print(f'Finished {sys.argv[0]} rc={rc}')
-        runtime.info_msg(f'Finished {sys.argv[0]} rc={rc}')
-        # set a delay time to wait for DeviceCompare to be ready
         for i in range(delay_time, 0, -1):
-            print(f'Wait {i}s to teardown your system...', end='\r')
+            print(f'Wait {i}s wait for DeviceCompare to be ready...', end='\r')
             time.sleep(1)
-
-        return test_teardown()
-
-    if count == standby_num + hibernate_num:
-        count = count + 1
-    elif args.stop:
-        rc, stop_flag = failstop(stop_dev, count)
+    
+    if args.stop:
+        rc, stop_flag = failstop(curr_dict['stop_device'], count)
         if rc:
             runtime.error_msg(f'The test Failed in failstop()')
             return 1
@@ -1389,39 +1369,16 @@ def test_main(args, dict, rc):
             runtime.info_msg(f'All devices are working well')
             # no need return 0
 
-        count = count + 1
-    else:
-        count = count + 1
-
-    if set_current_test_mode(arr_test_args, count, stop_dev):
-        runtime.error_msg(f'Return error! Failed in set_current_test_mode()')
-        return 1
-
-    if stop_dev != None and len(stop_dev) > 0:
-        new_dev = ''
-        for i in range(0, len(stop_dev)):
-            if len(stop_dev) == 1:
-                new_dev = stop_dev[0]
-            elif len(stop_dev) > 1 and i < len(stop_dev) - 1:
-                new_dev = new_dev + stop_dev[i] + ' '
-            elif i == len(stop_dev) - 1:
-                new_dev = new_dev + stop_dev[i]
-            else:
-                runtime.error_msg(f'Return error! Failed in initialling str. String lenth is {len(stop_dev)}')
-                return 1
-    else:
-        new_dev = stop_dev
-
     if wb_num > 0:
         wb_num = wb_num - 1  
         
-        if (new_dev is not None and len(new_dev) > 0) and backup == True:
-            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {new_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
-        elif (new_dev is not None and len(new_dev) > 0) and backup == False:
-            cmd = f'{os.path.basename(sys.argv[0])} --stop {new_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
-        elif (new_dev is None or len(new_dev) == 0) and backup == True:
+        if (stop_dev is not None and len(stop_dev) > 0) and backup == True:
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+        elif (stop_dev is not None and len(stop_dev) > 0) and backup == False:
+            cmd = f'{os.path.basename(sys.argv[0])} --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+        elif (stop_dev is None or len(stop_dev) == 0) and backup == True:
             cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
-        elif (new_dev is None or len(new_dev) == 0) and backup == False:
+        elif (stop_dev is None or len(stop_dev) == 0) and backup == False:
             cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         else:
             runtime.error_msg(f'Return error! Failed in setting the backup command of {cmd}')
@@ -1430,17 +1387,16 @@ def test_main(args, dict, rc):
         if create_batch_file(cmd):
             runtime.error_msg(f'Return error! Failed in create_batch_file() with cmd of {cmd}')
             return 1
-
     elif cb_num > 0:
         cb_num = cb_num - 1
 
-        if new_dev != None and backup == True:
-            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {new_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
-        elif new_dev != None and backup == False:
-            cmd = f'{os.path.basename(sys.argv[0])} --stop {new_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
-        elif new_dev == None and backup == True:
+        if stop_dev != None and backup == True:
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+        elif stop_dev != None and backup == False:
+            cmd = f'{os.path.basename(sys.argv[0])} --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+        elif stop_dev == None and backup == True:
             cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
-        elif new_dev == None and backup == False:
+        elif stop_dev == None and backup == False:
             cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         else:
             runtime.error_msg(f'Return error! Failed in setting the backup command of {cmd}')
@@ -1449,6 +1405,21 @@ def test_main(args, dict, rc):
         if create_batch_file(cmd) :
             runtime.error_msg(f'Return error! Failed in create_batch_file() with cmd of {cmd}')
             return 1
+    else:
+        # handle for finish test
+        print(f'Finished {sys.argv[0]} rc={rc}')
+        runtime.info_msg(f'Finished {sys.argv[0]} rc={rc}')
+        return test_teardown()
+
+    # stress count + 1 when they was done every cycle
+    if count == standby_num + hibernate_num:
+        count = count + 1
+    else:
+        count = count + 1
+
+    if set_current_test_mode(arr_test_args, count, curr_dict['stop_device']):
+        runtime.error_msg(f'Return error! Failed in set_current_test_mode()')
+        return 1
 
     # run backup_cleanup
     if args.backup_cleanup and backup_cleanup():
@@ -1472,7 +1443,7 @@ if __name__ == '__main__':
     try:
         # show the basic information
         print("===========================================================================")
-        print(f'Tool version {tool_version}, Python pakage {python_version}')
+        print(f'Tool version {tool_version}, Python package {python_version}')
         print("This is README.md, the class material's top-level user guide")
         print("Author: Kanan Fan, https://www.youtube.com/channel/UCoSrY_IQQVpmIRZ9Xf-y93g")
         print("===========================================================================")
@@ -1555,8 +1526,10 @@ if __name__ == '__main__':
             raise Exception(f'The test Failed in running --wb and --cb')
 
     except Exception as ex:
+        # exit(1)
         print(f'Error: {ex}. Please check runtime.log in logs folder for more details')
-        print(f'Finished {sys.argv[0]} rc={rc}')  # exit(1)
+        print(f'Finished {sys.argv[0]} rc={rc}')
         runtime.handle_exception(f'Error: {ex}. Please check runtime.log in logs folder for more details')
-        runtime.handle_exception(f'Finished {sys.argv[0]} rc={rc}')  # exit(1)
-        test_teardown()  # exit(0)
+        runtime.handle_exception(f'Finished {sys.argv[0]} rc={rc}')
+        test_teardown()
+        # exit(0)

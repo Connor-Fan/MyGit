@@ -1,9 +1,10 @@
 @echo off
 @rem ########################################
-@rem #          請自行更新測試軟體          #
+@rem   #          請自行更新測試軟體          #
 @rem ########################################
 
 set SIGNTOOL_DIR=DigitalSignature
+set AutoStress_DIR=C:\BIOS\MyGit\AutoStressTool
 set DIST_DIR=dist
 
 @set "params=%*"
@@ -58,6 +59,8 @@ cd /d "%~dp0"
 cd %SIGNTOOL_DIR%
 signtool.exe sign /fd certHash /f YourCertificate.pfx /p ZAQ!2wsx AutoStress.exe
 signtool.exe verify /pa /v AutoStress.exe
+copy AutoStress.exe %AutoStress_DIR%
+echo File copied to the stress folder successfully!
 pause
 exit
 
