@@ -8,13 +8,12 @@ import pyautogui
 import battery, dash, runtime
 from pywinauto import Application
 
-# Disable Fail-Safe mode in pyautogui.
-# This allows the mouse cursor to move to (0, 0) without triggering a Fail-Safe halt.
-pyautogui.FAILSAFE = False
-# Globals section: define global variables in here
+# Globals section: define global variables here
 
+# Disable Fail-Safe mode in pyautogui. This allows the mouse cursor to move to (0, 0) without triggering a Fail-Safe halt.
+pyautogui.FAILSAFE = False
 # Tool version
-tool_version = "2.2.0"
+tool_version = "2.4.0"
 # Python compiler version
 python_version = "3.8.10"
 # Get a directory of your current test path
@@ -54,11 +53,11 @@ pwrtest_path = os.path.join(tools_dir, r"PwrTest\pwrtest.exe")
 platcfgw_exe_path = os.path.join(tools_dir, r"MfgTools\PlatCfg64W.exe")
 # PlatCfg2W64.exe path
 platcfg2w_exe_path = os.path.join(tools_dir, r"MfgTools\PlatCfg2W64.exe")
+# FPTW64.exe path
+fpt_exe_path = os.path.join(tools_dir, r"FPT\FPTW64.exe")
 # The json file to save temporary values (command line arguments, ...)
 current_state_path = os.path.join(test_path, "current_state.json")
 
-# Default delay time each power cycle
-default_delay_time_sec = 0
 # Default of standby (times)
 default_standby = 0
 # Default of standby time (in second)
@@ -73,6 +72,10 @@ default_warm_boot = 0
 default_cold_boot = 0
 # Default time in second of cold boot
 default_cold_boot_sec = 120
+# Default of greset (times)
+default_global_reset = 0
+# Default of delay time (in second)
+default_delay_sec = 0
 
 def failstop(dev, count):
     """
@@ -143,7 +146,7 @@ def failstop(dev, count):
                 runtime.debug_msg(f'Do not find that you want to stop the device of {dev[i]}, and goes with next one to keep finding.')
                 # no need return 1, None            
     else:
-        runtime.debug_msg('All devices do not get lost and not need to stop the auto script')
+        runtime.debug_msg('All devices remain connected, and there is no need to stop the auto script')
 
     return 0, stop_flag
 
@@ -185,7 +188,7 @@ def check_uac_flag():
 
     rc, std_out, std_err = dash.runcmd('REG QUERY HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ /v EnableLUA')
     if rc == 1 and std_err is not None:
-        runtime.error_msg(f'Can not get the value of EnableLUA! Error: {std_err}')
+        runtime.error_msg(f'Can not retrieve the value of EnableLUA! Error: {std_err}')
         return 1, None
         
     lines = std_out.split('\n')
@@ -194,10 +197,10 @@ def check_uac_flag():
             break
         if 'EnableLUA' in line:
             if '0x1' in line:
-                runtime.info_msg(f'EnableLUA is enabled. Set EnableLUA to be True')
+                runtime.info_msg(f'EnableLUA is enabled. Setting EnableLUA to be True')
                 uac_flag = True
             elif '0x0' in line:
-                runtime.info_msg(f'EnableLUA is disabled. Set EnableLUA to be False')
+                runtime.info_msg(f'EnableLUA is disabled. Setting EnableLUA to be False')
                 uac_flag = False
     
     return 0, uac_flag
@@ -216,7 +219,7 @@ def get_sleep_state():
 
     rc, std_out, std_err = dash.runcmd('powercfg -a')
     if rc == 1 and std_err is not None:
-        runtime.error_msg(f'Can not get the sleep state! Error: {std_err}')
+        runtime.error_msg(f'Can not retrieve the sleep state! Error: {std_err}')
         return 1
 
     lines = std_out.split('\n')
@@ -360,37 +363,45 @@ def parse_cmdline(cmd_line=None):
         arguments of the user input
     """
 
-    parser = argparse.ArgumentParser(description='Dell Stress Tests')
+    parser = argparse.ArgumentParser(description='Compal Stress Tool')
 
     # Custom args
     parser.add_argument('--cleanup', dest='cleanup', default=None, type=str, choices=['Yes', 'No'],
-                    help='Perform cleanup tasks, including removing temporary files, resetting power settings, and cleaning Windows and BIOS event logs.\n'
-                        'When set to "Yes," the --backup_cleanup option is also enabled; when set to "No," the --backup_cleanup option is disabled.')
-    parser.add_argument('--backup_cleanup', default=None, action='store_true', help='[Internal Use Only] Clean Windows and BIOS event logs (Not for general use).')
-    parser.add_argument('--setup', default=None, action='store_true', help='Set up system settings like UAC, memory dump settings, and Windows power plan')
-    parser.add_argument('--auto', default=None, action='store_true', help='Run DeviceCompare automatically')
+                    help='Perform cleanup tasks and close DeviceCompare if it is running,\n'
+                        'including removing temporary files, resetting power settings, deleting WLAN profiles, and cleaning Windows events and BIOS logs.\n'
+                        'When set to "Yes," the --backup_cleanup option is also enabled; when set to "No," the --backup_cleanup option is disabled.\n'
+                        'If --backup_cleanup is enabled, the program will clean Windows and BIOS event logs with each power cycle.')
+    parser.add_argument('--backup_cleanup', default=None, action='store_true', help='[Internal Use Only] Clean Windows events and BIOS logs (Not for general use).')
+    parser.add_argument('--setup', default=None, action='store_true', help='Set up system settings like UAC, memory dump settings, and Windows power plan.')
+    parser.add_argument('--auto', default=None, action='store_true', 
+                    help='Run DeviceCompare automatically. If DeviceCompare is running, please double click AutoStress.exe to teardown your system first.')
     parser.add_argument('--stop', nargs='+', dest='stop', default=[], type=str,
                     help='If DeviceCompare gets negetive results, the autoscript will be stopped.\n'
-                        'Usage: --stop all or --stop "SanDisk" "SoundWire Speakers"\n'
+                        'Usage: --stop all or --stop "SanDisk" "SoundWire Speakers".\n'
                         'Note: Use with --auto to enable the stop functionality. Without --auto, the stop feature will not be active.')
     parser.add_argument('--standby', nargs=2, dest='standby', default=[], type=int, metavar=('iterations', 'duration'),
                     help='Enter standby mode multiple times, each time staying in standby for a specified duration.\n'
-                        'Usage: --standby 3 60 (up to 2 iterations)\n'
+                        'Usage: --standby 3 60 (up to 2 iterations).\n'
                         'This means standby for 3 times, each time for 60 seconds before waking up the system.')
     parser.add_argument('--hibernate', nargs=2, dest='hibernate', default=[], type=int, metavar=('iterations', 'duration'),
                     help='Enter hibernation mode multiple times, each time staying in hibernation for a specified duration.\n'
-                        'Usage: --hibernate 3 60 (up to 2 iterations)\n'
+                        'Usage: --hibernate 3 60 (up to 2 iterations).\n'
                         'This means hibernate for 3 times, each time for 60 seconds before waking up the system.')
-    parser.add_argument('--wb', dest='wb', default=None, type=int,
+    parser.add_argument('--wb', dest='wb', default=None, type=int, metavar=('iterations'),
                     help='Perform warm boot multiple times, each time restarting the system after a specified duration.\n'
-                        'Usage: --wb 3 (up to 2 iterations)\n'
+                        'Usage: --wb 3 (up to 1 iterations).\n'
                         'This means warm boot for 3 times.')
     parser.add_argument('--cb', nargs=2, dest='cb', default=[], type=int, metavar=('iterations', 'duration'),
                     help='Perform cold boot multiple times, each time powering down the system for a specified duration before waking it up.\n'
-                        'Usage: --cb 3 120 (up to 2 iterations)\n'
+                        'Usage: --cb 3 120 (up to 2 iterations).\n'
                         'This means cold boot for 3 times, each time powering down for 120 seconds before waking up the system.')
-    parser.add_argument('--delay', dest='delay', default=None, type=int,
-                    help='Set the delay time (in seconds) before each power cycle.')
+    parser.add_argument('--greset', dest='greset', default=None, type=int, metavar=('iterations'),
+                    help='Perform global reset multiple times, each time restarting the system after a specified duration.\n'
+                        'Usage: --greset 3 (up to 1 iterations).\n'
+                        'This means global reset for 3 times.')
+    parser.add_argument('--delay', dest='delay', default=None, type=int, metavar=('duration'),
+                    help='Set the delay time (in seconds) before each power cycle.\n'
+                        'Usage: --delay 60 (up to 1 iterations).')
     if cmd_line:
         args = parser.parse_args(cmd_line)
     else:
@@ -455,9 +466,6 @@ def generate_test_mode(args):
     if args.stop is not None and len(args.stop) > 0:
         arr_test_args.append(f'--stop')
 
-    if args.delay is not None:
-        arr_test_args.append(f'--delay')
-    
     if args.standby is not None and len(args.standby) > 0:
         arr_test_args.append(f'--standby')
 
@@ -469,7 +477,13 @@ def generate_test_mode(args):
 
     if args.cb is not None and len(args.cb) > 0:
         arr_test_args.append(f'--cb')
-    
+
+    if args.greset is not None:
+        arr_test_args.append(f'--greset')
+
+    if args.delay is not None:
+        arr_test_args.append(f'--delay')
+
     runtime.debug_msg(f'The current args are {arr_test_args}')
 
     return 0, arr_test_args  # Return the list of valid args and return code 0
@@ -517,6 +531,7 @@ def set_current_test_mode(test_args, count, device):
     curr_dict['warm_boot_num'] = wb_num
     curr_dict['cold_boot_num'] = cb_num
     curr_dict['cold_boot_time'] = cb_time
+    curr_dict['global_reset_num'] = greset_num
     curr_dict['delay_time'] = delay_time
 
     if dash.write_json_file(current_state_path, curr_dict):
@@ -547,7 +562,6 @@ def cleanup():
         print(f'Can not close DeviceCompare! Error: {str(err)}')
         # no need return 1
 
-    print(f'Start removing temp files...')
     # clean up log files in the device compare folder
     try:
         if os.path.exists(device_list_path):
@@ -581,7 +595,7 @@ def cleanup():
                 os.unlink(os.path.join("C:\Compal\DeviceCompare\debuglog", f))
 
     except Exception as err:
-        print(f'Can not clean up files in C:\Compal\DeviceCompare\debuglog! Error: {str(err)}')
+        print(f'Can not clean up the log files in C:\Compal\DeviceCompare\debuglog! Error: {str(err)}')
         # no need return 1
 
     # clean up config files in the device compare folder
@@ -646,52 +660,57 @@ def cleanup():
         print(f'Can not clean up files in {test_path}! Error: {str(err)}')
         # no need return 1
 
-    print(f'Start resetting power plans...')
-    runtime.info_msg("Reset power plans...")
-    # reset and restore power plans to default settings   
+    # delete WLAN profiles from interface Wi-Fi
+    rc, std_out, std_err = dash.runcmd('netsh wlan delete profile name=*')
+    if rc == 1 and std_err is not None:
+        print(f'Can not delete WLAN profiles from interface Wi-Fi! Error: {std_err}')
+        runtime.error_msg(f'Can not delete WLAN profiles from interface Wi-Fi! Error: {std_err}')
+        # no need return 1
+    else:
+        print(f'{std_out}')
+
+    # reset and restore power plan to default settings
     rc, _, std_err = dash.runcmd('powercfg restoredefaultschemes')
     if rc == 1 and std_err is not None:
         print(f'Can not reset power plans! Error: {std_err}')
         runtime.error_msg(f'Can not reset power plans! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Reset restore power plans is successful!')
+        print(f'Restore default settings for the power plans was successful')
 
-    print(f'Start cleaning up Windows Events...')
     # clean up Windows Event, like Application, System, Setup and Security
-    rc, std_out, std_err = dash.runcmd('wevtutil cl Application')
+    rc, _, std_err = dash.runcmd('wevtutil cl Application')
     if rc == 1 and std_err is not None:
         print(f'Can not clean up the Windows Event of Application! Error: {std_err}')
         runtime.error_msg(f'Can not clean up the Windows Event of Application! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up the Windows Event of Application is successful!')
+        print(f'Cleaning the Windows Event of Application was successful.!')
 
-    rc, std_out, std_err = dash.runcmd('wevtutil cl System')
+    rc, _, std_err = dash.runcmd('wevtutil cl System')
     if rc == 1 and std_err is not None:
         print(f'Can not clean up the Windows Event of System! Error: {std_err}')
         runtime.error_msg(f'Can not clean up the Windows Event of System! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up the Windows Event of System is successful!')
+        print(f'Cleaning the Windows Event of System was successful!')
 
-    rc, std_out, std_err = dash.runcmd('wevtutil cl Setup')
+    rc, _, std_err = dash.runcmd('wevtutil cl Setup')
     if rc == 1 and std_err is not None:
         print(f'Can not clean up the Windows Event of Setup! Error: {std_err}')
         runtime.error_msg(f'Can not clean up the Windows Event of Setup! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up the Windows Event of Setup is successful!')
+        print(f'Cleaning the Windows Event of Setup was successful!')
 
-    rc, std_out, std_err = dash.runcmd('wevtutil cl Security')
+    rc, _, std_err = dash.runcmd('wevtutil cl Security')
     if rc == 1 and std_err is not None:
         print(f'Can not clean up the Windows Event of Security! Error: {std_err}')
         runtime.error_msg(f'Can not clean up the Windows Event of Security! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up the Windows Event of Security is successful!')
+        print(f'Cleaning the Windows Event of Security was successful!')
 
-    print(f'Start cleaning up BIOS Events...')
     # set the platcfg cmd for cleaning BIOS log
     cmd_bioslog = f"{platcfg2w_exe_path} -set BiosLogClear=Clear"
     
@@ -701,7 +720,7 @@ def cleanup():
         runtime.error_msg(f'Can not clean up BIOS logs with the cmd of {cmd_bioslog}! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up BIOS logs is successful!')
+        print(f'Cleaning BIOS logs was successful!')
         
     # set the platcfg cmd for cleaning thermal log
     cmd_thermallog = f"{platcfg2w_exe_path} -set ThermalLogClear=Clear"
@@ -712,7 +731,7 @@ def cleanup():
         runtime.error_msg(f'Can not clean up thermal logs with the cmd of {cmd_thermallog}! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up thermal logs is successful!')
+        print(f'Cleaning thermal logs was successful!')
 
     # set the platcfg cmd for cleaning power log
     cmd_powerlog = f"{platcfg2w_exe_path} -set PowerLogClear=Clear"
@@ -723,7 +742,7 @@ def cleanup():
         runtime.error_msg(f'Can not clean up power logs with the cmd of {cmd_powerlog}! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up power logs is successful!')
+        print(f'Cleaning power logs was successful!')
         
     return 0
 
@@ -735,41 +754,39 @@ def backup_cleanup():
         (bool): no need return 
     """
 
-    print(f'Start cleaning up Windows Events...')
     # clean up Windows Event, like Application, System, Setup and Security
-    rc, std_out, std_err = dash.runcmd('wevtutil cl Application')
+    rc, _, std_err = dash.runcmd('wevtutil cl Application')
     if rc == 1 and std_err is not None:
         print(f'Can not clean up the Windows Event of Application! Error: {std_err}')
         runtime.error_msg(f'Can not clean up the Windows Event of Application! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up the Windows Event of Application is successful!')
+        print(f'Cleaning the Windows Event of Application was successful.!')
 
-    rc, std_out, std_err = dash.runcmd('wevtutil cl System')
+    rc, _, std_err = dash.runcmd('wevtutil cl System')
     if rc == 1 and std_err is not None:
         print(f'Can not clean up the Windows Event of System! Error: {std_err}')
         runtime.error_msg(f'Can not clean up the Windows Event of System! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up the Windows Event of System is successful!')
+        print(f'Cleaning the Windows Event of System was successful!')
 
-    rc, std_out, std_err = dash.runcmd('wevtutil cl Setup')
+    rc, _, std_err = dash.runcmd('wevtutil cl Setup')
     if rc == 1 and std_err is not None:
         print(f'Can not clean up the Windows Event of Setup! Error: {std_err}')
         runtime.error_msg(f'Can not clean up the Windows Event of Setup! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up the Windows Event of Setup is successful!')
+        print(f'Cleaning the Windows Event of Setup was successful!')
 
-    rc, std_out, std_err = dash.runcmd('wevtutil cl Security')
+    rc, _, std_err = dash.runcmd('wevtutil cl Security')
     if rc == 1 and std_err is not None:
         print(f'Can not clean up the Windows Event of Security! Error: {std_err}')
         runtime.error_msg(f'Can not clean up the Windows Event of Security! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up the Windows Event of Security is successful!')
+        print(f'Cleaning the Windows Event of Security was successful!')
 
-    print(f'Start cleaning up BIOS Events...')
     # set the platcfg cmd for cleaning BIOS log
     cmd_bioslog = f"{platcfg2w_exe_path} -set BiosLogClear=Clear"
     
@@ -779,7 +796,7 @@ def backup_cleanup():
         runtime.error_msg(f'Can not clean up BIOS logs with the cmd of {cmd_bioslog}! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up BIOS logs is successful!')
+        print(f'Cleaning BIOS logs was successful!')
         
     # set the platcfg cmd for cleaning thermal log
     cmd_thermallog = f"{platcfg2w_exe_path} -set ThermalLogClear=Clear"
@@ -790,7 +807,7 @@ def backup_cleanup():
         runtime.error_msg(f'Can not clean up thermal logs with the cmd of {cmd_thermallog}! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up thermal logs is successful!')
+        print(f'Cleaning thermal logs was successful!')
 
     # set the platcfg cmd for cleaning power log
     cmd_powerlog = f"{platcfg2w_exe_path} -set PowerLogClear=Clear"
@@ -801,7 +818,7 @@ def backup_cleanup():
         runtime.error_msg(f'Can not clean up power logs with the cmd of {cmd_powerlog}! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Clean up power logs is successful!')
+        print(f'Cleaning power logs was successful!')
         
     return 0
 
@@ -839,8 +856,6 @@ def setup(curr_dict):
     Returns:
         (bool): no need return
     """
-
-    print(f'Start setting power configs...')
     
     rc, _, std_err = dash.runcmd('powercfg -change -standby-timeout-dc 0')
     if rc == 1 and std_err is not None:
@@ -848,53 +863,52 @@ def setup(curr_dict):
         runtime.error_msg(f'Can not set the standby timeout to 0 in DC mode! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Set the standby timeout to 0 in DC mode is successful!')
+        print(f'Setting the standby timeout to 0 in DC mode was successful!')
         
-    rc, std_out, std_err = dash.runcmd('powercfg -change -standby-timeout-ac 0')
+    rc, _, std_err = dash.runcmd('powercfg -change -standby-timeout-ac 0')
     if rc == 1 and std_err is not None:
         print(f'Can not set the standby timeout to 0 in AC mode! Error: {std_err}')
         runtime.error_msg(f'Can not set the standby timeout to 0 in AC mode! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Set the standby timeout to 0 in AC mode is successful!')
+        print(f'Setting the standby timeout to 0 in AC mode was successful!')
         
-    rc, std_out, std_err = dash.runcmd('powercfg -change -monitor-timeout-dc 0')
+    rc, _, std_err = dash.runcmd('powercfg -change -monitor-timeout-dc 0')
     if rc == 1 and std_err is not None:
         print(f'Can not set the monitor timeout to 0 in DC mode! Error: {std_err}')
         runtime.error_msg(f'Can not set the monitor timeout to 0 in DC mode! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Set the monitor timeout to 0 in DC mode is successful!')
+        print(f'Setting the monitor timeout to 0 in DC mode was successful!')
         
-    rc, std_out, std_err = dash.runcmd('powercfg -change -monitor-timeout-ac 0')
+    rc, _, std_err = dash.runcmd('powercfg -change -monitor-timeout-ac 0')
     if rc == 1 and std_err is not None:
         print(f'Can not set the monitor timeout to 0 in AC mode! Error: {std_err}')
         runtime.error_msg(f'Can not set monitor timeout to 0 in AC mode! Error: {std_err}')
         # no need return 1
     else:
-        print(f'Set the monitor timeout to 0 in AC mode is successful!')
+        print(f'Setting the monitor timeout to 0 in AC mode was successful!')
 
-    print(f'Start to config the BSOD settings for memory dump...')
     # config memory dump settings in Startup and Recovery 
-    rc, std_out, std_err = dash.runcmd('wmic recoveros set AutoReboot = False')
+    rc, _, std_err = dash.runcmd('wmic recoveros set AutoReboot = False')
     if rc == 1 and std_err is not None:
         print(f'Can not set Automatically Restart to be False! Error: {std_err}')
         runtime.error_msg(f'Can not set Automatically Restart to be False! Error: {std_err}')
         return 1
     else:
-        print(f'Set Automatically Restart to be False is successful!')
+        print(f'Setting Automatically Restart to be False was successful!')
 
-    rc, std_out, std_err = dash.runcmd('wmic recoveros set DebugInfoType = 1')
+    rc, _, std_err = dash.runcmd('wmic recoveros set DebugInfoType = 1')
     if rc == 1 and std_err is not None:
         print(f'Can not set the memory dump to be complete! Error: {std_err}')
         runtime.error_msg(f'Can not set the memory dump to be complete! Error: {std_err}')
         return 1
     else:
-        print(f'Set the memory dump to be complete is successful!')
+        print(f'Setting the memory dump to be complete was successful!')
 
     rc, uac_flag = check_uac_flag()
     if rc:
-        runtime.error_msg(f'Can not get the UAC flag with check_uac_flag()')
+        runtime.error_msg(f'Can not retrieve the UAC flag while the program is running with check_uac_flag()')
         return 1
 
     if uac_flag:
@@ -908,7 +922,7 @@ def setup(curr_dict):
 
         rc, curr_args = backup_args(curr_dict)
         if rc:
-            runtime.error_msg(f'Can not get the current args with backup_args()')
+            runtime.error_msg(f'Can not retrieve the current args while the program is running with backup_args()')
             return 1
 
         for args in curr_args:
@@ -932,11 +946,11 @@ def setup(curr_dict):
         if stop_dev is not None and len(stop_dev) > 0:
             backup_cmd = f'{os.path.basename(sys.argv[0])} ' + f'{backup_cmd}' + \
                          f'--stop {stop_dev} --standby {standby_num} {standby_time} ' \
-                         f'--hibernate {hibernate_num} {hibernate_time} ' \
+                         f'--hibernate {hibernate_num} {hibernate_time} --greset {greset_num} ' \
                          f'--wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
         else:
             backup_cmd = f'{os.path.basename(sys.argv[0])} ' + f'{backup_cmd}' + \
-                         f'--standby {standby_num} {standby_time} ' \
+                         f'--standby {standby_num} {standby_time} --greset {greset_num} ' \
                          f'--hibernate {hibernate_num} {hibernate_time} ' \
                          f'--wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
 
@@ -951,7 +965,7 @@ def setup(curr_dict):
         cmd = "shutdown -r -t 0 -f"
         rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
-            runtime.error_msg(f'Can not shut down the system with cmd of {cmd}')
+            runtime.error_msg(f'Can not shutdown the system with cmd of {cmd}')
             return 1  
     else:
         print(f'UAC is {uac_flag}. We donot need to be disabled again')
@@ -1171,7 +1185,7 @@ def do_warm_boot():
         time.sleep(1)
         rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
-            runtime.error_msg(f'Can not place your system in warmboot mode with cmd of {cmd}! Error: {std_err}')
+            runtime.error_msg(f'Can not place your system in warm boot mode with cmd of {cmd}! Error: {std_err}')
             return 1
 
     return 0
@@ -1195,7 +1209,7 @@ def do_cold_boot():
             return 1
         # Command wakeup after shutdown according to specified number of minutes
         sleep_time_minutes = round(cb_time / 60)  # Minute
-        cmd_wakeup = f'{platcfgw_exe_path} -w Auto_On_Time:{(datetime.datetime.now() + datetime.timedelta(minutes=+sleep_time_minutes)).strftime("%H:%M")} '
+        cmd_wakeup = f'{platcfgw_exe_path} -w Auto_On_Time:{(datetime.datetime.now() + datetime.timedelta(minutes=+sleep_time_minutes)).strftime("%H:%M")}'
 
         # Run CMD wakeup
         rc, _, std_err = dash.runcmd(cmd_wakeup)
@@ -1208,7 +1222,27 @@ def do_cold_boot():
         time.sleep(1)
         rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
-            runtime.error_msg(f'Can not place your system in coldboot mode with cmd of {cmd}! Error: {std_err}')
+            runtime.error_msg(f'Can not place your system in cold boot mode with cmd of {cmd}! Error: {std_err}')
+            return 1
+
+    return 0
+
+def do_global_reset():
+    """
+    To place system in global reset mode
+    
+    Returns:
+        (bool): tuple(int[0, 1])
+    """
+    
+    if greset_num > 0:
+        print(f'Start running a global reset...')
+        cmd = f'{fpt_exe_path} -greset'
+
+        time.sleep(1)
+        rc, _, std_err = dash.runcmd(cmd)
+        if rc == 1 and std_err is not None:
+            runtime.error_msg(f'Can not place your system in global reset mode with cmd of {cmd}! Error: {std_err}')
             return 1
 
     return 0
@@ -1241,7 +1275,7 @@ def test_teardown():
             app = Application(backend="uia").connect(title_re="Device Compare")
             main_window = app.window(title_re="Device Compare")
             # wait to be ready
-            main_window.wait('visible')
+            main_window.wait('visible', timeout=30)
             # initialize x, y coordinate
             pyautogui.moveTo(0, 0, duration=0.25)
             time.sleep(1)
@@ -1274,10 +1308,10 @@ def run_device_compare():
         # Run DeviceCompare app
         app = Application(backend="uia").start(device_compare_path)
         main_window = app.window(title_re="Device Compare")
+        # wait to be ready
+        main_window.wait('visible', timeout=30)
         # dump UI handles of DeviceCompare.
         #main_window.print_control_identifiers(filename=device_compare_ui_handle_path)
-        # wait to be ready
-        main_window.wait('visible')
         # initialize x, y coordinate
         pyautogui.moveTo(0, 0, duration=0.25)
         # delay 2s every action
@@ -1295,7 +1329,7 @@ def run_device_compare():
         runtime.handle_exception(ex)
         return 1
 
-    print(f'Run DeviceCompare is done')
+    print(f'Running DeviceCompare is done')
 
     return 0 
  
@@ -1317,6 +1351,7 @@ def test_main(args, dict, rc):
     wb_num = curr_dict['warm_boot_num']
     cb_num = curr_dict['cold_boot_num']
     cb_time = curr_dict['cold_boot_time']
+    greset_num = curr_dict['global_reset_num']
     delay_time = curr_dict['delay_time']
 
     # get the current value of stress cycle
@@ -1339,22 +1374,27 @@ def test_main(args, dict, rc):
     runtime.debug_msg(f'In test_main, warm_boot_num = {wb_num}')
     runtime.debug_msg(f'In test_main, cold_boot_num = {cb_num}')
     runtime.debug_msg(f'In test_main, cold_boot_time = {cb_time}')
+    runtime.debug_msg(f'In test_main, global_reset_num = {greset_num}')
     runtime.debug_msg(f'In test_main, delay_time = {delay_time}')
 
     # set a delay time to wait for DeviceCompare to be ready
     if wb_num > 0:
         for i in range(delay_time, 0, -1):
-            print(f'Wait {i}s to do warm boot...', end='\r')
+            print(f'Wait {i}s to do a warm boot...', end='\r')
             time.sleep(1)
     elif cb_num > 0 and cb_time > 0:
         for i in range(delay_time, 0, -1):
-            print(f'Wait {i}s to do cold boot...', end='\r')
+            print(f'Wait {i}s to do a cold boot...', end='\r')
+            time.sleep(1)
+    elif greset_num > 0 :
+        for i in range(delay_time, 0, -1):
+            print(f'Wait {i}s to do a global reset...', end='\r')
             time.sleep(1)
     else:
         for i in range(delay_time, 0, -1):
             print(f'Wait {i}s wait for DeviceCompare to be ready...', end='\r')
             time.sleep(1)
-    
+
     if args.stop:
         rc, stop_flag = failstop(curr_dict['stop_device'], count)
         if rc:
@@ -1373,13 +1413,13 @@ def test_main(args, dict, rc):
         wb_num = wb_num - 1  
         
         if (stop_dev is not None and len(stop_dev) > 0) and backup == True:
-            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
         elif (stop_dev is not None and len(stop_dev) > 0) and backup == False:
-            cmd = f'{os.path.basename(sys.argv[0])} --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
         elif (stop_dev is None or len(stop_dev) == 0) and backup == True:
-            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
         elif (stop_dev is None or len(stop_dev) == 0) and backup == False:
-            cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
         else:
             runtime.error_msg(f'Return error! Failed in setting the backup command of {cmd}')
             return 1
@@ -1391,13 +1431,31 @@ def test_main(args, dict, rc):
         cb_num = cb_num - 1
 
         if stop_dev != None and backup == True:
-            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
         elif stop_dev != None and backup == False:
-            cmd = f'{os.path.basename(sys.argv[0])} --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
         elif stop_dev == None and backup == True:
-            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
         elif stop_dev == None and backup == False:
-            cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
+            cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
+        else:
+            runtime.error_msg(f'Return error! Failed in setting the backup command of {cmd}')
+            return 1
+
+        if create_batch_file(cmd) :
+            runtime.error_msg(f'Return error! Failed in create_batch_file() with cmd of {cmd}')
+            return 1
+    elif greset_num > 0:
+        greset_num = greset_num - 1
+
+        if stop_dev != None and backup == True:
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
+        elif stop_dev != None and backup == False:
+            cmd = f'{os.path.basename(sys.argv[0])} --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
+        elif stop_dev == None and backup == True:
+            cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
+        elif stop_dev == None and backup == False:
+            cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
         else:
             runtime.error_msg(f'Return error! Failed in setting the backup command of {cmd}')
             return 1
@@ -1425,13 +1483,17 @@ def test_main(args, dict, rc):
     if args.backup_cleanup and backup_cleanup():
         runtime.error_msg(f'Return error! Failed in backup_cleanup()')
         return 1
-    # run warmboot
+    # run warm boot
     if args.wb and do_warm_boot():
         runtime.error_msg(f'Return error! Failed in do_warm_boot()')
         return 1
-    # run coldboot      
-    if args.cb and do_cold_boot():      
+    # run cold boot
+    if args.cb and do_cold_boot():
         runtime.error_msg(f'Return error! Failed in do_cold_boot()')
+        return 1
+    # run global reset
+    if args.greset and do_global_reset():
+        runtime.error_msg(f'Return error! Failed in do_global_reset()')
         return 1
 
     return 0
@@ -1455,11 +1517,6 @@ if __name__ == '__main__':
             cleanup()
 
         # get time, num and device args
-        if args.delay:
-            delay_time = abs(args.delay)
-        else:
-            delay_time = default_delay_time_sec
-        
         rc, standby_num, standby_time = parse_standby_argument()
         if rc:
             raise Exception(f'Return error! Failed in parsing --standby arguments')
@@ -1476,6 +1533,16 @@ if __name__ == '__main__':
         rc, cb_num, cb_time = parse_cold_boot_argument()
         if rc:
             raise Exception(f'Return error! Failed in parsing --cb arguments')
+
+        if args.greset:
+            greset_num = abs(args.greset)
+        else:
+            greset_num = default_global_reset
+
+        if args.delay:
+            delay_time = abs(args.delay)
+        else:
+            delay_time = default_delay_sec
 
         rc, stop_dev = parse_stop_argument()
         if rc:
@@ -1526,10 +1593,8 @@ if __name__ == '__main__':
             raise Exception(f'The test Failed in running --wb and --cb')
 
     except Exception as ex:
-        # exit(1)
         print(f'Error: {ex}. Please check runtime.log in logs folder for more details')
         print(f'Finished {sys.argv[0]} rc={rc}')
         runtime.handle_exception(f'Error: {ex}. Please check runtime.log in logs folder for more details')
         runtime.handle_exception(f'Finished {sys.argv[0]} rc={rc}')
         test_teardown()
-        # exit(0)

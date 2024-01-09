@@ -1,5 +1,5 @@
 ===========================================================================
-Tool version 2.2.0, Python package 3.8.10
+Tool version 2.4.0, Python package 3.8.10
 This is README.txt, the class material's top-level user guide
 Author: Kanan Fan, https://www.youtube.com/channel/UCoSrY_IQQVpmIRZ9Xf-y93g
 ===========================================================================
@@ -14,6 +14,7 @@ AutoStress.exe --cleanup No --setup --auto --standby 500 60 --delay 65
 AutoStress.exe --cleanup No --setup --auto --hibernate 500 60 --delay 65
 AutoStress.exe --cleanup No --setup --auto --wb 500 --delay 65
 AutoStress.exe --cleanup No --setup --auto --cb 500 120 --delay 65
+AutoStress.exe --cleanup No --setup --auto --greset 500 --delay 65
 
 Command for --stop usage:
 AutoStress.exe --cleanup No --setup --auto --cb 500 120 --delay 65 --stop all
