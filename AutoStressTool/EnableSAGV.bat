@@ -33,8 +33,8 @@ for /f "tokens=*" %%a in (temp.txt) do (
 endlocal
 
 REM Prompt the user to enter a string
-echo 1 is that doesn't need to bypass Dell safe mode
-echo 2 is that needs to bypass Dell safe mode
+echo (1) does not require SAFE authentication
+echo (2) requires SAFE authentication
 set /p input=Please enter a number to enable SAGV(1~2): 
 
 REM Use IF statements to check the input string and determine the cases

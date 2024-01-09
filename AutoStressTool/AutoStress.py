@@ -13,7 +13,7 @@ from pywinauto import Application
 # Disable Fail-Safe mode in pyautogui. This allows the mouse cursor to move to (0, 0) without triggering a Fail-Safe halt.
 pyautogui.FAILSAFE = False
 # Tool version
-tool_version = "2.5.3"
+tool_version = "2.5.4"
 # Python compiler version
 python_version = "3.8.10"
 # Get a directory of your current test path
@@ -139,7 +139,7 @@ def failstop(dev, count):
                 stop_flag = True
                 return 0, stop_flag
             else:
-                runtime.debug_msg(f'Do not find that you want to stop the device of {dev[i]}, and goes with next one to keep finding')         
+                runtime.debug_msg(f'Do not find that you want to stop the device of {dev[i]}, and goes with next one to keep finding')
     else:
         runtime.info_msg('All devices remain connected, and there is no need to stop the auto script')
 
@@ -352,7 +352,7 @@ def parse_cmdline(cmd_line=None):
     """
     To parse args from command line
 
-    Returns:    
+    Returns:
         arguments of the user input
     """
 
@@ -439,7 +439,7 @@ def generate_test_mode(args):
 
     arr_test_args = []
 
-    if args.cleanup is None or len(args.cleanup) == 0:   
+    if args.cleanup is None or len(args.cleanup) == 0:
         pass  # Using default cleanup value
     elif args.cleanup in ['Yes', 'No']:
         arr_test_args.append(f'--cleanup {args.cleanup}')
@@ -548,6 +548,7 @@ def cleanup():
         if rc == 0 and pid_devicecompare is not None:
             app = Application(backend="uia").connect(title_re="Device Compare")
             app.kill()
+            time.sleep(1)  # Wait for app.kill() to be done
             runtime.info_msg(f'Closing DeviceCompare is done')
 
     except Exception as err:
@@ -597,7 +598,7 @@ def cleanup():
             for f in file_list:
                 if ".txt" in f:
                     runtime.info_msg(f'Remove the old file of {f}')
-                    os.remove(os.path.join(device_compare_folder_path, f)) 
+                    os.remove(os.path.join(device_compare_folder_path, f))
 
     except Exception as err:
         runtime.error_msgbox(f'Can not clean up files in {device_compare_folder_path}! Error: {err}')
@@ -779,7 +780,7 @@ def backup_cleanup():
         runtime.warning_msg(f'Can not clean up power logs with the cmd of {cmd}! Warning: {std_err}')
     else:
         runtime.info_msg(f'Cleaning power logs was successful!')
-        
+
     return 0
 
 def backup_args(curr_dict):
@@ -800,7 +801,7 @@ def backup_args(curr_dict):
     if arr_args is not None and len(arr_args) > 0:
         for i in range(0, len(arr_args)):
             if i > 0:
-                curr_args.append(' ')   
+                curr_args.append(' ')
             curr_args.append(arr_args[i])
     else:
         runtime.error_msgbox(f'Can not read curr_dict["curr_test_args"]! Error: arr_args is {arr_args}')
@@ -1337,7 +1338,7 @@ def test_main(args, dict, rc):
             runtime.info_msg(f'All devices are working well')
 
     if wb_num > 0:
-        wb_num = wb_num - 1  
+        wb_num = wb_num - 1
         
         if (stop_dev is not None and len(stop_dev) > 0) and backup == True:
             cmd = f'{os.path.basename(sys.argv[0])} --backup_cleanup --stop {stop_dev} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
@@ -1493,7 +1494,7 @@ if __name__ == '__main__':
         curr_dict = dash.read_json_file(current_state_path)
 
         if curr_dict == 1 or curr_dict is None:
-            raise Exception(f'The current dict is empty! Failed in accessing {current_state_path}')  
+            raise Exception(f'The current dict is empty! Failed in accessing {current_state_path}')
 
         # set environment
         if args.setup and setup(curr_dict):
