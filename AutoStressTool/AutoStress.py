@@ -13,7 +13,7 @@ from pywinauto import Application
 # Disable Fail-Safe mode in pyautogui. This allows the mouse cursor to move to (0, 0) without triggering a Fail-Safe halt.
 pyautogui.FAILSAFE = False
 # Tool version
-tool_version = "2.4.0"
+tool_version = "2.5.3"
 # Python compiler version
 python_version = "3.8.10"
 # Get a directory of your current test path
@@ -71,7 +71,7 @@ default_warm_boot = 0
 # Default of cold boot (times)
 default_cold_boot = 0
 # Default time in second of cold boot
-default_cold_boot_sec = 120
+default_cold_boot_sec = 60
 # Default of greset (times)
 default_global_reset = 0
 # Default of delay time (in second)
@@ -91,7 +91,7 @@ def failstop(dev, count):
     stop_flag = False
     
     if not os.path.exists(device_list_path):
-        runtime.error_msg(f'Can not find the folder of {device_list_path}')
+        runtime.error_msgbox(f'Can not find the folder of {device_list_path}')
         return 1, None
 
     devlist_dc_pass_path = os.path.join(test_path, f'DeviceCompareTest\DevList\DeviceManager_List_{count}_DC_Pass.txt')
@@ -112,10 +112,10 @@ def failstop(dev, count):
         fail_devlist = dash.read_txt_file(devlist_ac_fail_path)
         runtime.debug_msg(f'The fail devlist goes with {devlist_dc_fail_path}')
     else:
-        runtime.error_msg(f'Can not find the txt file of {devlist_dc_pass_path}')
-        runtime.error_msg(f'Can not find the txt file of {devlist_ac_pass_path}')
-        runtime.error_msg(f'Can not find the txt file of {devlist_dc_fail_path}')
-        runtime.error_msg(f'Can not find the txt file of {devlist_ac_fail_path}')
+        runtime.error_msgbox(f'Can not find the txt file of {devlist_dc_pass_path}')
+        runtime.error_msgbox(f'Can not find the txt file of {devlist_ac_pass_path}')
+        runtime.error_msgbox(f'Can not find the txt file of {devlist_dc_fail_path}')
+        runtime.error_msgbox(f'Can not find the txt file of {devlist_ac_fail_path}')
         runtime.debug_msg(f'The counter of curr_dict[stress_cycle] is {count}')
         return 1, None
     
@@ -125,28 +125,23 @@ def failstop(dev, count):
         for i in range(0, len(dev)):
             # for stopping all devices
             if dev[i] == "all":
-                print(f'Find out devices get lost on your system')
                 runtime.info_msg(f'Find out devices get lost on your system')
                 stop_flag = True
                 return 0, stop_flag 
             # for devices lost
             elif dev[i] not in fail_devlist and dev[i] in devlis:
-                print(f'Find out {dev[i]} get lost on your system')
                 runtime.info_msg(f'Find out {dev[i]} get lost on your system')
                 stop_flag = True
                 return 0, stop_flag
             # for devices add
             elif dev[i] in fail_devlist and dev[i] not in devlis:
-                print(f'Find out {dev[i]} is added on your system')
                 runtime.info_msg(f'Find out {dev[i]} is added on your system')
                 stop_flag = True
                 return 0, stop_flag
-            # for exceptions
             else:
-                runtime.debug_msg(f'Do not find that you want to stop the device of {dev[i]}, and goes with next one to keep finding.')
-                # no need return 1, None            
+                runtime.debug_msg(f'Do not find that you want to stop the device of {dev[i]}, and goes with next one to keep finding')         
     else:
-        runtime.debug_msg('All devices remain connected, and there is no need to stop the auto script')
+        runtime.info_msg('All devices remain connected, and there is no need to stop the auto script')
 
     return 0, stop_flag
 
@@ -173,7 +168,7 @@ def create_batch_file(cmd):
             f.close()
             
     except Exception as err:
-        runtime.handle_exception(f'Can not create a batch file of {batch_file_path}! Error: {err}')
+        runtime.error_msgbox(f'Can not create a batch file of {batch_file_path}! Error: {err}')
         return 1
 
     return 0
@@ -188,7 +183,7 @@ def check_uac_flag():
 
     rc, std_out, std_err = dash.runcmd('REG QUERY HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ /v EnableLUA')
     if rc == 1 and std_err is not None:
-        runtime.error_msg(f'Can not retrieve the value of EnableLUA! Error: {std_err}')
+        runtime.error_msgbox(f'Can not retrieve the value of EnableLUA! Error: {std_err}')
         return 1, None
         
     lines = std_out.split('\n')
@@ -219,7 +214,7 @@ def get_sleep_state():
 
     rc, std_out, std_err = dash.runcmd('powercfg -a')
     if rc == 1 and std_err is not None:
-        runtime.error_msg(f'Can not retrieve the sleep state! Error: {std_err}')
+        runtime.error_msgbox(f'Can not retrieve the sleep state! Error: {std_err}')
         return 1
 
     lines = std_out.split('\n')
@@ -254,7 +249,7 @@ def parse_stop_argument():
     elif len(args.stop) >= 1:
         stop_dev = args.stop
     else:
-        runtime.error_msg(f'Please check the help info for how to type a correct arg! Error: {args.stop}')
+        runtime.error_msgbox(f'Please check the help info for how to type a correct arg! Error: {args.stop}')
         return 1, None
 
     return 0, stop_dev
@@ -278,29 +273,27 @@ def parse_cold_boot_argument():
         cold_boot_num = abs(args.cb[0])
         cold_boot_time = abs(args.cb[1])
     else:
-        runtime.error_msg(f'Please check the help info for how to type a correct arg! Error: {args.cb}')
+        runtime.error_msgbox(f'Please check the help info for how to type a correct arg! Error: {args.cb}')
         return 1, None, None 
 
-    runtime.info_msg(f'cold_boot_num = {cold_boot_num}, cold_boot_time = {cold_boot_time}')
+    runtime.debug_msg(f'cold_boot_num = {cold_boot_num}, cold_boot_time = {cold_boot_time}')
 
     ACLineStatus, _, _, _, _, _ = battery.check_power()
-    if cold_boot_time >= 120 and cold_boot_num > 0:
+    if cold_boot_time >= 60 and cold_boot_num > 0:
         if ACLineStatus:
             return 0, cold_boot_num, cold_boot_time
         else:
-            print(f'Please insert your AC for Auto On Day')
-            runtime.error_msg(f'Please insert your AC for Auto On Day')
-            return 1, _, _
-    elif cold_boot_time < 120 and cold_boot_num > 0:
-        print(f'For CB, sleep time must be more than 120s')
-        runtime.error_msg(f'For CB, sleep time must be more than 120s')
-        return 1, _, _
+            runtime.error_msgbox(f'Please insert your AC for Auto On Day')
+            return 1, None, None
+    elif cold_boot_time < 60 and cold_boot_num > 0:
+        runtime.error_msgbox(f'For --cb, sleep time shound be more than 60s')
+        return 1, None, None
     elif ACLineStatus:
-        # return the defautl value of 0, 120.
+        # return the defautl value of 0, 60.
         return 0, cold_boot_num, cold_boot_time
     else:
-        print(f'Your system is DC only! Please check whether you need to insert AC or not')
-        # return the defautl value of 0, 120.
+        runtime.warning_msg(f'Your system is DC only! Please check whether you need to insert AC or not')
+        # return the defautl value of 0, 60.
         return 0, cold_boot_num, cold_boot_time
 
 def parse_hibernate_argument():
@@ -322,10 +315,10 @@ def parse_hibernate_argument():
         hibernate_num = abs(args.hibernate[0])
         hibernate_time = abs(args.hibernate[1])
     else:
-        runtime.error_msg(f'Please check the help info for how to type a correct arg! Error: {args.hibernate}')
+        runtime.error_msgbox(f'Please check the help info for how to type a correct arg! Error: {args.hibernate}')
         return 1, None, None 
 
-    runtime.info_msg(f'hibernate_num = {hibernate_num}, hibernate_time = {hibernate_time}')
+    runtime.debug_msg(f'hibernate_num = {hibernate_num}, hibernate_time = {hibernate_time}')
     
     return 0, hibernate_num, hibernate_time
 
@@ -348,10 +341,10 @@ def parse_standby_argument():
         standby_num = abs(args.standby[0])
         standby_time = abs(args.standby[1])
     else:
-        runtime.error_msg(f'Please check the help info for how to type a correct arg! Error: {args.standby}')
+        runtime.error_msgbox(f'Please check the help info for how to type a correct arg! Error: {args.standby}')
         return 1, None, None 
  
-    runtime.info_msg(f'standby_num = {standby_num}, standby_time = {standby_time}')
+    runtime.debug_msg(f'standby_num = {standby_num}, standby_time = {standby_time}')
     
     return 0, standby_num, standby_time
 
@@ -393,8 +386,8 @@ def parse_cmdline(cmd_line=None):
                         'This means warm boot for 3 times.')
     parser.add_argument('--cb', nargs=2, dest='cb', default=[], type=int, metavar=('iterations', 'duration'),
                     help='Perform cold boot multiple times, each time powering down the system for a specified duration before waking it up.\n'
-                        'Usage: --cb 3 120 (up to 2 iterations).\n'
-                        'This means cold boot for 3 times, each time powering down for 120 seconds before waking up the system.')
+                        'Usage: --cb 3 60 (up to 2 iterations).\n'
+                        'This means cold boot for 3 times, each time powering down for 60 seconds before waking up the system.')
     parser.add_argument('--greset', dest='greset', default=None, type=int, metavar=('iterations'),
                     help='Perform global reset multiple times, each time restarting the system after a specified duration.\n'
                         'Usage: --greset 3 (up to 1 iterations).\n'
@@ -428,8 +421,8 @@ def get_process_id_by_name(name):
                 break
 
     except Exception as err:
-        runtime.handle_exception(f'get_process_id_by_name: {str(err)}')
-        return 1, f'get_process_id_by_name: {str(err)}'
+        runtime.error_msgbox(f'get_process_id_by_name: {err}')
+        return 1, None
 
     return 0, pid
 
@@ -447,11 +440,11 @@ def generate_test_mode(args):
     arr_test_args = []
 
     if args.cleanup is None or len(args.cleanup) == 0:   
-        pass  # Using default cleanup values
+        pass  # Using default cleanup value
     elif args.cleanup in ['Yes', 'No']:
         arr_test_args.append(f'--cleanup {args.cleanup}')
     else:
-        runtime.error_msg(f'Please check the help info for how to type a correct arg! Error: {args.cleanup}')
+        runtime.error_msgbox(f'Please check the help info for how to type a correct arg! Error: {args.cleanup}')
         return 1, []  # Return an empty list and return code 1
 
     if args.backup_cleanup is not None:
@@ -506,7 +499,7 @@ def set_current_test_mode(test_args, count, device):
     if os.path.exists(current_state_path):
         curr_dict = dash.read_json_file(current_state_path)
         if curr_dict is None:
-            runtime.error_msg(f'The current dict is empty! Failed in dash.read_json_file()! The file path is {current_state_path}')
+            runtime.error_msgbox(f'The current dict is empty! Failed in dash.read_json_file()! The file path is {current_state_path}')
             return 1
 
         curr_dict['curr_test_args'] = test_args
@@ -535,7 +528,7 @@ def set_current_test_mode(test_args, count, device):
     curr_dict['delay_time'] = delay_time
 
     if dash.write_json_file(current_state_path, curr_dict):
-        runtime.error_msg(f'Can not write the current args into {current_state_path}')
+        runtime.error_msgbox(f'Can not write the current args into {current_state_path}')
         return 1
 
     return 0
@@ -553,50 +546,49 @@ def cleanup():
         rc, pid_devicecompare = get_process_id_by_name("DeviceCompare.exe")
 
         if rc == 0 and pid_devicecompare is not None:
-            print(f'Start closing DeviceCompare..., please do not operate your system!')
             app = Application(backend="uia").connect(title_re="Device Compare")
             app.kill()
-            print(f'Close DeviceCompare is done')
+            runtime.info_msg(f'Closing DeviceCompare is done')
 
     except Exception as err:
-        print(f'Can not close DeviceCompare! Error: {str(err)}')
-        # no need return 1
+        runtime.error_msgbox(f'Can not close DeviceCompare! Error: {err}')
+        return 1
 
-    # clean up log files in the device compare folder
+    # clean up temp files in the device compare folder
     try:
         if os.path.exists(device_list_path):
             file_list = os.listdir(device_list_path)
             for f in file_list:
-                print(f'remove the old file of {f}')
-                os.unlink(os.path.join(device_list_path, f))
+                runtime.info_msg(f'remove the old file of {f}')
+                os.remove(os.path.join(device_list_path, f))
                 
     except Exception as err:
-        print(f'Can not clean up files in {device_list_path}! Error: {str(err)}')
-        # no need return 1
+        runtime.error_msgbox(f'Can not clean up files in {device_list_path}! Error: {err}')
+        return 1
     
-    # clean up log files in the device compare folder
+    # clean up temp files in the device compare folder
     try:
         if os.path.exists(device_compare_log_path):
             file_list = os.listdir(device_compare_log_path)
             for f in file_list:
-                print(f'remove the old file of {f}')
-                os.unlink(os.path.join(device_compare_log_path, f))
+                runtime.info_msg(f'remove the old file of {f}')
+                os.remove(os.path.join(device_compare_log_path, f))
                 
     except Exception as err:
-        print(f'Can not clean up files in {device_compare_log_path}! Error: {str(err)}')
-        # no need return 1
+        runtime.error_msgbox(f'Can not clean up files in {device_compare_log_path}! Error: {err}')
+        return 1
 
-    # clean up log files in the debuglog folder
+    # clean up temp files in the debuglog folder
     try:
         if os.path.exists("C:\Compal\DeviceCompare\debuglog"):
             file_list = os.listdir("C:\Compal\DeviceCompare\debuglog")
             for f in file_list:
-                print(f'Remove the old file of {f}')
-                os.unlink(os.path.join("C:\Compal\DeviceCompare\debuglog", f))
+                runtime.info_msg(f'Remove the old file of {f}')
+                os.remove(os.path.join("C:\Compal\DeviceCompare\debuglog", f))
 
     except Exception as err:
-        print(f'Can not clean up the log files in C:\Compal\DeviceCompare\debuglog! Error: {str(err)}')
-        # no need return 1
+        runtime.error_msgbox(f'Can not clean up the log files in C:\Compal\DeviceCompare\debuglog! Error: {err}')
+        return 1
 
     # clean up config files in the device compare folder
     try:
@@ -604,25 +596,25 @@ def cleanup():
             file_list = os.listdir(device_compare_folder_path)
             for f in file_list:
                 if ".txt" in f:
-                    print(f'Remove the old file of {f}')
-                    os.unlink(os.path.join(device_compare_folder_path, f)) 
+                    runtime.info_msg(f'Remove the old file of {f}')
+                    os.remove(os.path.join(device_compare_folder_path, f)) 
 
     except Exception as err:
-        print(f'Can not clean up files in {device_compare_folder_path}! Error: {str(err)}')
-        # no need return 1
+        runtime.error_msgbox(f'Can not clean up files in {device_compare_folder_path}! Error: {err}')
+        return 1
 
-    # clean up temp files in Temp folder
+    # clean up temp files in the Temp folder
     try:
         if os.path.exists(Temp_path):
             file_list = os.listdir(Temp_path)
             for f in file_list:
                 if ".log" in f:
-                    print(f'Remove the old file of {f}')
-                    os.unlink(os.path.join(Temp_path, f)) 
+                    runtime.info_msg(f'Remove the old file of {f}')
+                    os.remove(os.path.join(Temp_path, f)) 
 
     except Exception as err:
-        print(f'Can not clean up files in {Temp_path}! Error: {str(err)}')
-        # no need return 1
+        runtime.error_msgbox(f'Can not clean up files in {Temp_path}! Error: {err}')
+        return 1
 
     # clean up config files in the pwrtest folder
     try:
@@ -633,116 +625,98 @@ def cleanup():
                 if ".exe" in f:      
                     pass
                 else:
-                    print(f'Remove the old file of {f}')
-                    os.unlink(os.path.join(pwrtest_folder_path, f)) 
+                    runtime.info_msg(f'Remove the old file of {f}')
+                    os.remove(os.path.join(pwrtest_folder_path, f)) 
 
     except Exception as err:
-        print(f'Can not clean up files in {pwrtest_folder_path}! Error: {str(err)}')
-        # no need return 1
+        runtime.error_msgbox(f'Can not clean up files in {pwrtest_folder_path}! Error: {err}')
+        return 1
 
     # remove the old batch files
     try:
         if os.path.exists(batch_file_path):
-            print(f'Remove the old batch file of {batch_file_path}')
-            os.unlink(batch_file_path)
+            runtime.info_msg(f'Remove the old batch file of {batch_file_path}')
+            os.remove(batch_file_path)
 
     except Exception as err:
-        print(f'Can not clean up files in {startup_path}! Error: {str(err)}')
-        # no need return 1
+        runtime.error_msgbox(f'Can not clean up files in {startup_path}! Error: {err}')
+        return 1
 
     # remove the old json files
     try:
         if os.path.exists(current_state_path):
-            print(f'Remove the olde json file of {current_state_path}')
-            os.unlink(current_state_path)
+            runtime.info_msg(f'Remove the olde json file of {current_state_path}')
+            os.remove(current_state_path)
 
     except Exception as err:
-        print(f'Can not clean up files in {test_path}! Error: {str(err)}')
-        # no need return 1
+        runtime.error_msgbox(f'Can not clean up files in {test_path}! Error: {err}')
+        return 1
 
     # delete WLAN profiles from interface Wi-Fi
     rc, std_out, std_err = dash.runcmd('netsh wlan delete profile name=*')
     if rc == 1 and std_err is not None:
-        print(f'Can not delete WLAN profiles from interface Wi-Fi! Error: {std_err}')
-        runtime.error_msg(f'Can not delete WLAN profiles from interface Wi-Fi! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not delete WLAN profiles from interface Wi-Fi! Warning: {std_err}')
     else:
-        print(f'{std_out}')
+        runtime.info_msg(f'{std_out}')
 
     # reset and restore power plan to default settings
     rc, _, std_err = dash.runcmd('powercfg restoredefaultschemes')
     if rc == 1 and std_err is not None:
-        print(f'Can not reset power plans! Error: {std_err}')
-        runtime.error_msg(f'Can not reset power plans! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not reset power plans! Warning: {std_err}')
     else:
-        print(f'Restore default settings for the power plans was successful')
+        runtime.info_msg(f'Restore default settings for the power plans was successful')
 
     # clean up Windows Event, like Application, System, Setup and Security
     rc, _, std_err = dash.runcmd('wevtutil cl Application')
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up the Windows Event of Application! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up the Windows Event of Application! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up the Windows Event of Application! Warning: {std_err}')
     else:
-        print(f'Cleaning the Windows Event of Application was successful.!')
+        runtime.info_msg(f'Cleaning the Windows Event of Application was successful.!')
 
     rc, _, std_err = dash.runcmd('wevtutil cl System')
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up the Windows Event of System! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up the Windows Event of System! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up the Windows Event of System! Warning: {std_err}')
     else:
-        print(f'Cleaning the Windows Event of System was successful!')
+        runtime.info_msg(f'Cleaning the Windows Event of System was successful!')
 
     rc, _, std_err = dash.runcmd('wevtutil cl Setup')
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up the Windows Event of Setup! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up the Windows Event of Setup! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up the Windows Event of Setup! Warning: {std_err}')
     else:
-        print(f'Cleaning the Windows Event of Setup was successful!')
+        runtime.info_msg(f'Cleaning the Windows Event of Setup was successful!')
 
     rc, _, std_err = dash.runcmd('wevtutil cl Security')
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up the Windows Event of Security! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up the Windows Event of Security! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up the Windows Event of Security! Warning: {std_err}')
     else:
-        print(f'Cleaning the Windows Event of Security was successful!')
+        runtime.info_msg(f'Cleaning the Windows Event of Security was successful!')
 
     # set the platcfg cmd for cleaning BIOS log
-    cmd_bioslog = f"{platcfg2w_exe_path} -set BiosLogClear=Clear"
+    cmd = f"{platcfg2w_exe_path} -set BiosLogClear=Clear"
     
-    rc, _, std_err = dash.runcmd(cmd_bioslog)
+    rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up BIOS logs with the cmd of {cmd_bioslog}! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up BIOS logs with the cmd of {cmd_bioslog}! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up BIOS logs with the cmd of {cmd}! Warning: {std_err}')
     else:
-        print(f'Cleaning BIOS logs was successful!')
+        runtime.info_msg(f'Cleaning BIOS logs was successful!')
         
     # set the platcfg cmd for cleaning thermal log
-    cmd_thermallog = f"{platcfg2w_exe_path} -set ThermalLogClear=Clear"
+    cmd = f"{platcfg2w_exe_path} -set ThermalLogClear=Clear"
     
-    rc, _, std_err = dash.runcmd(cmd_thermallog)
+    rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up thermal logs with the cmd of {cmd_thermallog}! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up thermal logs with the cmd of {cmd_thermallog}! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up thermal logs with the cmd of {cmd}! Warning: {std_err}')
     else:
-        print(f'Cleaning thermal logs was successful!')
+        runtime.info_msg(f'Cleaning thermal logs was successful!')
 
     # set the platcfg cmd for cleaning power log
-    cmd_powerlog = f"{platcfg2w_exe_path} -set PowerLogClear=Clear"
+    cmd = f"{platcfg2w_exe_path} -set PowerLogClear=Clear"
     
-    rc, _, std_err = dash.runcmd(cmd_powerlog)
+    rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up power logs with the cmd of {cmd_powerlog}! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up power logs with the cmd of {cmd_powerlog}! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up power logs with the cmd of {cmd}! Warning: {std_err}')
     else:
-        print(f'Cleaning power logs was successful!')
+        runtime.info_msg(f'Cleaning power logs was successful!')
         
     return 0
 
@@ -757,68 +731,54 @@ def backup_cleanup():
     # clean up Windows Event, like Application, System, Setup and Security
     rc, _, std_err = dash.runcmd('wevtutil cl Application')
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up the Windows Event of Application! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up the Windows Event of Application! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up the Windows Event of Application! Warning: {std_err}')
     else:
-        print(f'Cleaning the Windows Event of Application was successful.!')
+        runtime.info_msg(f'Cleaning the Windows Event of Application was successful.!')
 
     rc, _, std_err = dash.runcmd('wevtutil cl System')
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up the Windows Event of System! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up the Windows Event of System! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up the Windows Event of System! Warning: {std_err}')
     else:
-        print(f'Cleaning the Windows Event of System was successful!')
+        runtime.info_msg(f'Cleaning the Windows Event of System was successful!')
 
     rc, _, std_err = dash.runcmd('wevtutil cl Setup')
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up the Windows Event of Setup! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up the Windows Event of Setup! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up the Windows Event of Setup! Warning: {std_err}')
     else:
-        print(f'Cleaning the Windows Event of Setup was successful!')
+        runtime.info_msg(f'Cleaning the Windows Event of Setup was successful!')
 
     rc, _, std_err = dash.runcmd('wevtutil cl Security')
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up the Windows Event of Security! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up the Windows Event of Security! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up the Windows Event of Security! Warning: {std_err}')
     else:
-        print(f'Cleaning the Windows Event of Security was successful!')
+        runtime.info_msg(f'Cleaning the Windows Event of Security was successful!')
 
     # set the platcfg cmd for cleaning BIOS log
-    cmd_bioslog = f"{platcfg2w_exe_path} -set BiosLogClear=Clear"
+    cmd = f"{platcfg2w_exe_path} -set BiosLogClear=Clear"
     
-    rc, _, std_err = dash.runcmd(cmd_bioslog)
+    rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up BIOS logs with the cmd of {cmd_bioslog}! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up BIOS logs with the cmd of {cmd_bioslog}! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up BIOS logs with the cmd of {cmd}! Warning: {std_err}')
     else:
-        print(f'Cleaning BIOS logs was successful!')
+        runtime.info_msg(f'Cleaning BIOS logs was successful!')
         
     # set the platcfg cmd for cleaning thermal log
-    cmd_thermallog = f"{platcfg2w_exe_path} -set ThermalLogClear=Clear"
+    cmd = f"{platcfg2w_exe_path} -set ThermalLogClear=Clear"
     
-    rc, _, std_err = dash.runcmd(cmd_thermallog)
+    rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up thermal logs with the cmd of {cmd_thermallog}! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up thermal logs with the cmd of {cmd_thermallog}! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up thermal logs with the cmd of {cmd}! Warning: {std_err}')
     else:
-        print(f'Cleaning thermal logs was successful!')
+        runtime.info_msg(f'Cleaning thermal logs was successful!')
 
     # set the platcfg cmd for cleaning power log
-    cmd_powerlog = f"{platcfg2w_exe_path} -set PowerLogClear=Clear"
+    cmd = f"{platcfg2w_exe_path} -set PowerLogClear=Clear"
     
-    rc, _, std_err = dash.runcmd(cmd_powerlog)
+    rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
-        print(f'Can not clean up power logs with the cmd of {cmd_powerlog}! Error: {std_err}')
-        runtime.error_msg(f'Can not clean up power logs with the cmd of {cmd_powerlog}! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not clean up power logs with the cmd of {cmd}! Warning: {std_err}')
     else:
-        print(f'Cleaning power logs was successful!')
+        runtime.info_msg(f'Cleaning power logs was successful!')
         
     return 0
 
@@ -843,10 +803,11 @@ def backup_args(curr_dict):
                 curr_args.append(' ')   
             curr_args.append(arr_args[i])
     else:
-        runtime.error_msg(f'Can not read curr_dict["curr_test_args"]! Error: arr_args is {arr_args}')
+        runtime.error_msgbox(f'Can not read curr_dict["curr_test_args"]! Error: arr_args is {arr_args}')
         return 1, None
     
     runtime.debug_msg(f'In backup_args, curr_args = {curr_args}')
+    
     return 0, curr_args
 
 def setup(curr_dict):
@@ -859,56 +820,44 @@ def setup(curr_dict):
     
     rc, _, std_err = dash.runcmd('powercfg -change -standby-timeout-dc 0')
     if rc == 1 and std_err is not None:
-        print(f'Can not set the standby timeout to 0 in DC mode! Error: {std_err}')
-        runtime.error_msg(f'Can not set the standby timeout to 0 in DC mode! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not set the standby timeout to 0 in DC mode! Error: {std_err}')
     else:
-        print(f'Setting the standby timeout to 0 in DC mode was successful!')
+        runtime.info_msg(f'Setting the standby timeout to 0 in DC mode was successful!')
         
     rc, _, std_err = dash.runcmd('powercfg -change -standby-timeout-ac 0')
     if rc == 1 and std_err is not None:
-        print(f'Can not set the standby timeout to 0 in AC mode! Error: {std_err}')
-        runtime.error_msg(f'Can not set the standby timeout to 0 in AC mode! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not set the standby timeout to 0 in AC mode! Error: {std_err}')
     else:
-        print(f'Setting the standby timeout to 0 in AC mode was successful!')
+        runtime.info_msg(f'Setting the standby timeout to 0 in AC mode was successful!')
         
     rc, _, std_err = dash.runcmd('powercfg -change -monitor-timeout-dc 0')
     if rc == 1 and std_err is not None:
-        print(f'Can not set the monitor timeout to 0 in DC mode! Error: {std_err}')
-        runtime.error_msg(f'Can not set the monitor timeout to 0 in DC mode! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not set the monitor timeout to 0 in DC mode! Error: {std_err}')
     else:
-        print(f'Setting the monitor timeout to 0 in DC mode was successful!')
+        runtime.info_msg(f'Setting the monitor timeout to 0 in DC mode was successful!')
         
     rc, _, std_err = dash.runcmd('powercfg -change -monitor-timeout-ac 0')
     if rc == 1 and std_err is not None:
-        print(f'Can not set the monitor timeout to 0 in AC mode! Error: {std_err}')
-        runtime.error_msg(f'Can not set monitor timeout to 0 in AC mode! Error: {std_err}')
-        # no need return 1
+        runtime.warning_msg(f'Can not set monitor timeout to 0 in AC mode! Error: {std_err}')
     else:
-        print(f'Setting the monitor timeout to 0 in AC mode was successful!')
+        runtime.info_msg(f'Setting the monitor timeout to 0 in AC mode was successful!')
 
     # config memory dump settings in Startup and Recovery 
     rc, _, std_err = dash.runcmd('wmic recoveros set AutoReboot = False')
     if rc == 1 and std_err is not None:
-        print(f'Can not set Automatically Restart to be False! Error: {std_err}')
-        runtime.error_msg(f'Can not set Automatically Restart to be False! Error: {std_err}')
-        return 1
+        runtime.warning_msg(f'Can not set Automatically Restart to be False! Error: {std_err}')
     else:
-        print(f'Setting Automatically Restart to be False was successful!')
+        runtime.info_msg(f'Setting Automatically Restart to be False was successful!')
 
     rc, _, std_err = dash.runcmd('wmic recoveros set DebugInfoType = 1')
     if rc == 1 and std_err is not None:
-        print(f'Can not set the memory dump to be complete! Error: {std_err}')
-        runtime.error_msg(f'Can not set the memory dump to be complete! Error: {std_err}')
-        return 1
+        runtime.warning_msg(f'Can not set the memory dump to be complete! Error: {std_err}')
     else:
-        print(f'Setting the memory dump to be complete was successful!')
+        runtime.info_msg(f'Setting the memory dump to be complete was successful!')
 
     rc, uac_flag = check_uac_flag()
     if rc:
-        runtime.error_msg(f'Can not retrieve the UAC flag while the program is running with check_uac_flag()')
+        runtime.error_msgbox(f'Can not retrieve the UAC flag while the program is running with check_uac_flag()')
         return 1
 
     if uac_flag:
@@ -917,12 +866,12 @@ def setup(curr_dict):
         
         rc, _, std_err= dash.runcmd('reg.exe ADD HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v EnableLUA /t REG_DWORD /d 0 /f')
         if rc == 1 and std_err is not None:
-            runtime.error_msg(f'UAC can not be disabled! Error: {std_err}')
+            runtime.error_msgbox(f'UAC can not be disabled! Error: {std_err}')
             return 1
 
         rc, curr_args = backup_args(curr_dict)
         if rc:
-            runtime.error_msg(f'Can not retrieve the current args while the program is running with backup_args()')
+            runtime.error_msgbox(f'Can not retrieve the current args while the program is running with backup_args()')
             return 1
 
         for args in curr_args:
@@ -955,21 +904,21 @@ def setup(curr_dict):
                          f'--wb {wb_num} --cb {cb_num} {cb_time} --delay {delay_time}'
 
         runtime.info_msg(f'The backup cmd is {backup_cmd}')
-        rc = create_batch_file(backup_cmd)    
+        rc = create_batch_file(backup_cmd)
         if rc:
-            runtime.error_msg(f'Can not create a batch file with create_batch_file()')
+            runtime.error_msgbox(f'Can not create a batch file with create_batch_file()')
             return 1
 
-        print('Restart your system for reseting UAC settings')
-        time.sleep(1)
+        print('Restart your system for reseting UAC settings...')
         cmd = "shutdown -r -t 0 -f"
+        
+        time.sleep(1)
         rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
-            runtime.error_msg(f'Can not shutdown the system with cmd of {cmd}')
+            runtime.error_msgbox(f'Can not shutdown the system with cmd of {cmd}')
             return 1  
     else:
-        print(f'UAC is {uac_flag}. We donot need to be disabled again')
-        # no need return 1, err_msg
+        runtime.info_msg(f'UAC is {uac_flag}. We do not need to be disabled again')
 
     return 0
 
@@ -996,13 +945,11 @@ def do_standby():
             if curr_dict['backup_flag'] == True:
                 backup_cleanup()
             else:
-                print(f'Do not need to clean up Event Logs')
-                runtime.info_msg(f'Do not need to cleanup Event Logs')
+                runtime.info_msg(f'Do not need to clean up Event Logs')
 
             print(f'Start running a standby...')
 
             cmd = f'{pwrtest_path} /cs /s:standby /c:1 /d:90 /p:{standby_time}'
-            print(f'Place your system in standby mode with cmd of {cmd}')
             runtime.info_msg(f'Place your system in standby mode with cmd of {cmd}')
 
             time.sleep(1)
@@ -1010,32 +957,31 @@ def do_standby():
             rc, _, std_err = dash.runcmd(cmd)
 
             if rc == 1 and std_err is not None:
-                runtime.error_msg(f'Can not place your system in standby mode with cmd of {cmd}! Error: {std_err}')
+                runtime.error_msgbox(f'Can not place your system in standby mode with cmd of {cmd}! Error: {std_err}')
                 return 1
 
             pwrtestlog = dash.read_txt_file(pwrtestlog_path)
             if pwrtestlog is not None and pwrtestlog != 1:
-                print(pwrtestlog)
-                runtime.debug_msg(f'{pwrtestlog}')
+                runtime.info_msg(f'{pwrtestlog}')
             else:
-                runtime.error_msg(f'Can not access {pwrtestlog_path}')
+                runtime.error_msgbox(f'Can not access {pwrtestlog_path}')
                 return 1
             
             # for counting stress cycle
             if os.path.exists(current_state_path):
                 curr_dict = dash.read_json_file(current_state_path)
                 count = curr_dict['stress_cycle'] + 1
-                runtime.info_msg(f'The current cycle of stress is {count}')
+                runtime.debug_msg(f'The current cycle of stress is {count}')
             else:
                 count = 0
 
             rc, stop_dev = parse_stop_argument()
             if rc:
-                runtime.error_msg(f'Return error! Failed in parse_stop_argument()')
+                runtime.error_msgbox(f'Return error! Failed in parse_stop_argument()')
                 return 1
 
             if set_current_test_mode(arr_test_args, count, stop_dev):
-                runtime.error_msg(f'Return error! Failed in set_current_test_mode()')
+                runtime.error_msgbox(f'Return error! Failed in set_current_test_mode()')
                 return 1
 
             if args.stop:
@@ -1044,20 +990,15 @@ def do_standby():
                     print(f'Wait {i}s to make DeviceCompare ready...', end='\r')
                     time.sleep(1)
 
-                print(f'DeviceCompare is ready, scanning all devices to check the specific devices that you want to stop')
-
                 rc, stop_flag = failstop(stop_dev, count)
                 if rc:
-                    runtime.error_msg(f'Test Failed in failstop()')
+                    runtime.error_msgbox(f'Test Failed in failstop()')
                     return 1
                 elif stop_flag:
-                    print(f'Find out the failed devices and stop running the auto script')
-                    runtime.info_msg(f'Find out the failed devices and stop running the auto script')
+                    runtime.info_msgbox(f'Find out the failed devices and stop running the auto script')
                     return 1
                 else:
-                    print(f'All devices are working well')
                     runtime.info_msg(f'All devices are working well')
-                    # no need return 0
 
     return 0
 
@@ -1084,8 +1025,7 @@ def do_hibernate():
             if curr_dict['backup_flag'] == True:
                 backup_cleanup()
             else:
-                print(f'Do not need to clean up Event Logs')
-                runtime.info_msg(f'Do not need to cleanup Event Logs')
+                runtime.info_msg(f'Do not need to clean up Event Logs')
 
             print(f'Start running a hibernate...')
             
@@ -1094,57 +1034,53 @@ def do_hibernate():
                 _, _, std_err = dash.runcmd('powercfg -H ON')
                 _, _, is_s4_supported = get_sleep_state()
                 if not is_s4_supported:
-                    print('Sleep State, Hibernate (S4), is not enabled on this platform')
                     runtime.info_msg('Sleep State, Hibernate (S4), is not enabled on this platform')
                 else:
                     # Place the system into hibernate, wait 60 seconds, then resume. Repeat three times
                     cmd = f'{pwrtest_path} /sleep /s:4 /c:1 /d:90 /p:{hibernate_time}'
 
-                    print(f'Place system in s:4 mode by command line: {cmd}')
                     runtime.info_msg(f'Place system in Hibernate (s:4) mode by command line: {cmd}')
 
                     time.sleep(1)
                     rc, _, std_err = dash.runcmd(cmd)
                     if rc == 1 and std_err is not None:
-                        runtime.error_msg(f'Can not place your system in hibernate mode with cmd of {cmd}! Error: {std_err}')
+                        runtime.error_msgbox(f'Can not place your system in hibernate mode with cmd of {cmd}! Error: {std_err}')
                         return 1
             else:
                 runtime.info_msg('Sleep state S4 (Hibernate) is available in this system')
                 # Place the system into Hibernate, wait 60 seconds, then resume. Repeat three times
                 cmd = f'{pwrtest_path} /sleep /s:4 /c:1 /d:90 /p:{hibernate_time}'
 
-                print(f'Place system in Hibernate mode by command line: {cmd}')
                 runtime.info_msg(f'Place system in Hibernate (s:4) mode by command line: {cmd}')
 
                 time.sleep(1)
                 rc, _, std_err = dash.runcmd(cmd)
                 if rc == 1 and std_err is not None:
-                    runtime.error_msg(f'Can not place your system in hibernate mode with cmd of {cmd}! Error: {std_err}')
+                    runtime.error_msgbox(f'Can not place your system in hibernate mode with cmd of {cmd}! Error: {std_err}')
                     return 1
 
             pwrtestlog = dash.read_txt_file(pwrtestlog_path)
             if pwrtestlog is not None and pwrtestlog != 1:
-                print(pwrtestlog)
-                runtime.debug_msg(f'{pwrtestlog}')
+                runtime.info_msg(f'{pwrtestlog}')
             else:
-                runtime.error_msg(f'Can not access {pwrtestlog_path}')
+                runtime.error_msgbox(f'Can not access {pwrtestlog_path}')
                 return 1
 
             # for counting stress cycle
             if os.path.exists(current_state_path):
                 curr_dict = dash.read_json_file(current_state_path)
                 count = curr_dict['stress_cycle'] + 1
-                runtime.info_msg(f'The current cycle of stress is {count}')
+                runtime.debug_msg(f'The current cycle of stress is {count}')
             else:
                 count = 0
 
             rc, stop_dev = parse_stop_argument()
             if rc:
-                runtime.error_msg(f'Return error! failed in parse_stop_argument()')
+                runtime.error_msgbox(f'Return error! failed in parse_stop_argument()')
                 return 1
 
             if set_current_test_mode(arr_test_args, count, stop_dev):
-                runtime.error_msg(f'Return error! failed in set_current_test_mode()')
+                runtime.error_msgbox(f'Return error! failed in set_current_test_mode()')
                 return 1
 
             if args.stop:
@@ -1152,21 +1088,16 @@ def do_hibernate():
                 for i in range(delay_time, 0, -1):
                     print(f'Wait {i}s to make DeviceCompare ready...', end='\r')
                     time.sleep(1)
-
-                print(f'DeviceCompare is ready, scanning all devices to check the specific devices that you want to stop')
                 
                 rc, stop_flag = failstop(stop_dev, count)
                 if rc:
-                    runtime.error_msg(f'Test Failed in failstop()')
+                    runtime.error_msgbox(f'Test Failed in failstop()')
                     return 1
                 elif stop_flag:
-                    print(f'Find out the failed devices and stop running the auto script')
-                    runtime.info_msg(f'Find out the failed devices and stop running the auto script')
+                    runtime.info_msgbox(f'Find out the failed devices and stop running the auto script')
                     return 1
                 else:
-                    print(f'All devices are working well')
                     runtime.info_msg(f'All devices are working well')
-                    # no need return 0
 
     return 0
 
@@ -1185,7 +1116,7 @@ def do_warm_boot():
         time.sleep(1)
         rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
-            runtime.error_msg(f'Can not place your system in warm boot mode with cmd of {cmd}! Error: {std_err}')
+            runtime.error_msgbox(f'Can not place your system in warm boot mode with cmd of {cmd}! Error: {std_err}')
             return 1
 
     return 0
@@ -1201,20 +1132,20 @@ def do_cold_boot():
     if cb_num > 0 and cb_time > 0:
         print(f'Start running a cold boot...')
         # Update wake up timer
-        cmd_wakeup = f"{platcfgw_exe_path} -w Auto_On:Daily"
+        cmd = f"{platcfgw_exe_path} -w Auto_On:Daily"
 
-        rc, _, std_err = dash.runcmd(cmd_wakeup)
+        rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
-            runtime.error_msg(f'The wake up timer Failed in cmd of {cmd_wakeup}! Error: {std_err}')
+            runtime.error_msgbox(f'The wake up timer Failed in cmd of {cmd}! Error: {std_err}')
             return 1
         # Command wakeup after shutdown according to specified number of minutes
         sleep_time_minutes = round(cb_time / 60)  # Minute
-        cmd_wakeup = f'{platcfgw_exe_path} -w Auto_On_Time:{(datetime.datetime.now() + datetime.timedelta(minutes=+sleep_time_minutes)).strftime("%H:%M")}'
+        cmd = f'{platcfgw_exe_path} -w Auto_On_Time:{(datetime.datetime.now() + datetime.timedelta(minutes=+sleep_time_minutes)).strftime("%H:%M")}'
 
         # Run CMD wakeup
-        rc, _, std_err = dash.runcmd(cmd_wakeup)
+        rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
-            runtime.error_msg(f'The wake up timer Failed in cmd of {cmd_wakeup}! Error: {std_err}')
+            runtime.error_msgbox(f'The wake up timer Failed in cmd of {cmd}! Error: {std_err}')
             return 1
         # CMD Shutdown
         cmd = "shutdown -s -t 0 -f"
@@ -1222,7 +1153,7 @@ def do_cold_boot():
         time.sleep(1)
         rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
-            runtime.error_msg(f'Can not place your system in cold boot mode with cmd of {cmd}! Error: {std_err}')
+            runtime.error_msgbox(f'Can not place your system in cold boot mode with cmd of {cmd}! Error: {std_err}')
             return 1
 
     return 0
@@ -1242,7 +1173,7 @@ def do_global_reset():
         time.sleep(1)
         rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
-            runtime.error_msg(f'Can not place your system in global reset mode with cmd of {cmd}! Error: {std_err}')
+            runtime.error_msgbox(f'Can not place your system in global reset mode with cmd of {cmd}! Error: {std_err}')
             return 1
 
     return 0
@@ -1260,18 +1191,17 @@ def test_teardown():
     # remove old batch files
     try:
         if os.path.exists(batch_file_path):
-            print(f'remove the old batch file of {batch_file_path}')
-            os.unlink(batch_file_path)
+            runtime.info_msg(f'remove the old batch file of {batch_file_path}')
+            os.remove(batch_file_path)
 
     except Exception as err:
-        runtime.handle_exception(f'Can not clean files in {startup_path}! Error: {str(err)}')
-        # no need return 1
+        runtime.error_msgbox(f'Can not clean files in {startup_path}! Error: {err}')
+        return 1
 
     try:
         rc, pid_devicecompare = get_process_id_by_name("DeviceCompare.exe")
 
         if rc == 0 and pid_devicecompare is not None:
-            print(f'Start stopping DeviceCompare..., please do not operate your system!')
             app = Application(backend="uia").connect(title_re="Device Compare")
             main_window = app.window(title_re="Device Compare")
             # wait to be ready
@@ -1281,13 +1211,13 @@ def test_teardown():
             time.sleep(1)
             # stop
             main_window.child_window(title="Stop", auto_id="b_start", control_type="Button").click()
-            print(f'Stop DeviceCompare is done')
+            runtime.info_msg(f'Closing DeviceCompare is done')
         else:
-            print(f'DeviceCompare is not working! Do not need to stop it')
+            runtime.info_msg(f'DeviceCompare is not working! Do not need to stop it')
 
-    except Exception as ex:
-        runtime.handle_exception(ex)
-        # no need return 1
+    except Exception as err:
+        runtime.error_msgbox(f'Can not stop DeviceCompare! Error: {err}')
+        return 1
 
     print(f'Teardown is done, press any key to exit the program')
     os.system("pause")
@@ -1325,8 +1255,8 @@ def run_device_compare():
         # start
         main_window.child_window(title="Start", auto_id="b_start", control_type="Button").click()
 
-    except Exception as ex:
-        runtime.handle_exception(ex)
+    except Exception as err:
+        runtime.error_msgbox(f'Can not run DeviceCompare! Please check it whether is ready for use. Error: {err}')
         return 1
 
     print(f'Running DeviceCompare is done')
@@ -1341,7 +1271,7 @@ def test_main(args, dict, rc):
         (bool): tuple(int[0, 1])
     """
 
-    runtime.info_msg(f'Test main with args: {args}')
+    runtime.debug_msg(f'Test main with args: {args}')
    
     # get num/time of standby/hibernate/warm/cold boot and backup
     standby_num = curr_dict['standby_num']
@@ -1398,16 +1328,13 @@ def test_main(args, dict, rc):
     if args.stop:
         rc, stop_flag = failstop(curr_dict['stop_device'], count)
         if rc:
-            runtime.error_msg(f'The test Failed in failstop()')
+            runtime.error_msgbox(f'The test Failed in failstop()')
             return 1
         elif stop_flag:
-            print(f'Find out the failed devices and stop running the auto script')
-            runtime.info_msg(f'Find out the failed devices and stop running the auto script')
+            runtime.info_msgbox(f'Find out the failed devices and stop running the auto script')
             return 1
         else:
-            print(f'All devices are working well')
             runtime.info_msg(f'All devices are working well')
-            # no need return 0
 
     if wb_num > 0:
         wb_num = wb_num - 1  
@@ -1421,11 +1348,11 @@ def test_main(args, dict, rc):
         elif (stop_dev is None or len(stop_dev) == 0) and backup == False:
             cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
         else:
-            runtime.error_msg(f'Return error! Failed in setting the backup command of {cmd}')
+            runtime.error_msgbox(f'Return error! Failed in setting the backup command of {cmd}')
             return 1
 
         if create_batch_file(cmd):
-            runtime.error_msg(f'Return error! Failed in create_batch_file() with cmd of {cmd}')
+            runtime.error_msgbox(f'Return error! Failed in create_batch_file() with cmd of {cmd}')
             return 1
     elif cb_num > 0:
         cb_num = cb_num - 1
@@ -1439,11 +1366,11 @@ def test_main(args, dict, rc):
         elif stop_dev == None and backup == False:
             cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
         else:
-            runtime.error_msg(f'Return error! Failed in setting the backup command of {cmd}')
+            runtime.error_msgbox(f'Return error! Failed in setting the backup command of {cmd}')
             return 1
 
         if create_batch_file(cmd) :
-            runtime.error_msg(f'Return error! Failed in create_batch_file() with cmd of {cmd}')
+            runtime.error_msgbox(f'Return error! Failed in create_batch_file() with cmd of {cmd}')
             return 1
     elif greset_num > 0:
         greset_num = greset_num - 1
@@ -1457,15 +1384,14 @@ def test_main(args, dict, rc):
         elif stop_dev == None and backup == False:
             cmd = f'{os.path.basename(sys.argv[0])} --wb {wb_num} --cb {cb_num} {cb_time} --greset {greset_num} --delay {delay_time}'
         else:
-            runtime.error_msg(f'Return error! Failed in setting the backup command of {cmd}')
+            runtime.error_msgbox(f'Return error! Failed in setting the backup command of {cmd}')
             return 1
 
         if create_batch_file(cmd) :
-            runtime.error_msg(f'Return error! Failed in create_batch_file() with cmd of {cmd}')
+            runtime.error_msgbox(f'Return error! Failed in create_batch_file() with cmd of {cmd}')
             return 1
     else:
         # handle for finish test
-        print(f'Finished {sys.argv[0]} rc={rc}')
         runtime.info_msg(f'Finished {sys.argv[0]} rc={rc}')
         return test_teardown()
 
@@ -1476,24 +1402,24 @@ def test_main(args, dict, rc):
         count = count + 1
 
     if set_current_test_mode(arr_test_args, count, curr_dict['stop_device']):
-        runtime.error_msg(f'Return error! Failed in set_current_test_mode()')
+        runtime.error_msgbox(f'Return error! Failed in set_current_test_mode()')
         return 1
 
     # run backup_cleanup
     if args.backup_cleanup and backup_cleanup():
-        runtime.error_msg(f'Return error! Failed in backup_cleanup()')
+        runtime.error_msgbox(f'Return error! Failed in backup_cleanup()')
         return 1
     # run warm boot
     if args.wb and do_warm_boot():
-        runtime.error_msg(f'Return error! Failed in do_warm_boot()')
+        runtime.error_msgbox(f'Return error! Failed in do_warm_boot()')
         return 1
     # run cold boot
     if args.cb and do_cold_boot():
-        runtime.error_msg(f'Return error! Failed in do_cold_boot()')
+        runtime.error_msgbox(f'Return error! Failed in do_cold_boot()')
         return 1
     # run global reset
     if args.greset and do_global_reset():
-        runtime.error_msg(f'Return error! Failed in do_global_reset()')
+        runtime.error_msgbox(f'Return error! Failed in do_global_reset()')
         return 1
 
     return 0
@@ -1513,8 +1439,8 @@ if __name__ == '__main__':
         # parse arguments
         args = parse_cmdline()
 
-        if args.cleanup:
-            cleanup()
+        if args.cleanup and cleanup():
+            raise Exception(f'Return error! Failed in running --cleanup')
 
         # get time, num and device args
         rc, standby_num, standby_time = parse_standby_argument()
@@ -1552,7 +1478,7 @@ if __name__ == '__main__':
         if os.path.exists(current_state_path):
             curr_dict = dash.read_json_file(current_state_path)
             count = curr_dict['stress_cycle']
-            runtime.info_msg(f'The current cycle of stress is {count}')
+            runtime.debug_msg(f'The current cycle of stress is {count}')
         else:
             count = 0
 
@@ -1592,9 +1518,7 @@ if __name__ == '__main__':
         if test_main(args, curr_dict, rc):
             raise Exception(f'The test Failed in running --wb and --cb')
 
-    except Exception as ex:
-        print(f'Error: {ex}. Please check runtime.log in logs folder for more details')
-        print(f'Finished {sys.argv[0]} rc={rc}')
-        runtime.handle_exception(f'Error: {ex}. Please check runtime.log in logs folder for more details')
+    except Exception as err:
+        runtime.handle_exception(f'Error: {err}. Please check runtime.log in logs folder for more details')
         runtime.handle_exception(f'Finished {sys.argv[0]} rc={rc}')
         test_teardown()

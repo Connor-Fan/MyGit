@@ -105,6 +105,6 @@ def write_json_file(src, json_dict):
 
     except Exception as err:
         runtime.handle_exception(f'Can not write the json file {src}! Error: {err}')
-        return True
+        return 1
 
-    return False
+    return 0
