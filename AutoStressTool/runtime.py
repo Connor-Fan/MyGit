@@ -17,7 +17,7 @@ logging.config.fileConfig("logging.conf")
 logger = logging.getLogger("fileLogger")
 
 # Level     Numeric value   When it’s used
-# NOTSET    0                           
+# NOTSET    0
 # DEBUG	    10              Detailed information, typically of interest only when diagnosing problems.
 # INFO      20              Confirmation that things are working as expected.
 # WARNING   30              An indication that something unexpected happened, or indicative of some problem in the near future (e.g. ‘disk space low’). The software is still working as expected.
@@ -39,7 +39,7 @@ def debug_msg(message):
 def info_msg(message):
     """
     The function help to distribute info message to many channel as logger, console
-            
+
     Args:
         message: message info need to write/send/print
     """
@@ -103,11 +103,11 @@ def info_msgbox(message):
     Args:
         message (str): The info message to be displayed.
     """
-    
+
     print(message)
     # INFO 20 logging.info()
     logger.info(message)
-    
+
     root = tk.Tk()
     root.withdraw()
     messagebox.showinfo("Information", message)
@@ -119,11 +119,11 @@ def warning_msgbox(message):
     Args:
         message (str): The warning message to be displayed.
     """
-    
+
     print(message)
     # WARNING 30 logging.warning()
     logger.warning(message)
-    
+
     root = tk.Tk()
     root.withdraw()
     messagebox.showwarning("Warning", message)
@@ -135,11 +135,11 @@ def error_msgbox(message):
     Args:
         message (str): The error message to be displayed.
     """
-    
+
     print(message)
     # ERROR	40 logging.error()
     logger.error(message)
-    
+
     root = tk.Tk()
     root.withdraw()
     messagebox.showerror("Error", message)

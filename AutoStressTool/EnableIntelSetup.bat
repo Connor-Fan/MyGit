@@ -4,9 +4,7 @@ rem    #          請自行更新測試軟體        #
 rem ########################################
 
 set MFG_DIR=MfgTools
-set HOTSOS_DIR=HotSOS
 set SAFE_DIR=SafeAuthClient
-set "desktopPath=%userprofile%\Desktop"
 set SAFESRV=192.168.8.7
 set SAFELOG=safe.log
 
@@ -16,7 +14,7 @@ cd /d "%~dp0" && ( if exist "%temp%\getadmin.vbs" del "%temp%\getadmin.vbs" ) &&
 REM Prompt the user to enter a string
 echo (1) does not require SAFE authentication
 echo (2) requires SAFE authentication
-set /p input=Please enter a number to enable Intel Advanced Setup(1~2): 
+set /p input=Please enter a number to enable Intel Advanced Setup(1~2):
 
 REM Use IF statements to check the input string and determine the cases
 if "%input%"=="1" goto :case1

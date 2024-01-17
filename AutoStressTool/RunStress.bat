@@ -3,17 +3,29 @@ rem ########################################
 rem    #          請自行更新測試軟體        #
 rem ########################################
 
-set "STRESS_DIR=%USERPROFILE%\Desktop\AutoStressTool"
+set LOG_DIR=logs
 
 set "params=%*"
 cd /d "%~dp0" && ( if exist "%temp%\getadmin.vbs" del "%temp%\getadmin.vbs" ) && fsutil dirty query %systemdrive% 1>nul 2>nul || (  echo Set UAC = CreateObject^("Shell.Application"^) : UAC.ShellExecute "cmd.exe", "/k cd ""%~sdp0"" && %~s0 %params%", "", "runas", 1 >> "%temp%\getadmin.vbs" && "%temp%\getadmin.vbs" && exit /B )
+
+REM Change to the logs folder
+cd /d %LOG_DIR%
+
+REM Check if runtime.log exists, and delete it if it does
+if exist runtime.log (
+    echo Deleting runtime.log
+    del runtime.log
+    echo runtime.log deleted.
+) else (
+    echo runtime.log does not exist.
+)
 
 REM Prompt the user to enter a string
 echo (1) is running standby cycles
 echo (2) is running hibernate cycles
 echo (3) is running warm boot cycles
 echo (4) is running cold boot cycles
-set /p input=Please enter a number(1~4): 
+set /p input=Please enter a number(1~4):
 
 REM Use IF statements to check the input string and determine the cases
 if "%input%"=="1" goto :case1
@@ -53,7 +65,7 @@ rem ########################################
 echo You entered case4
 
 cd /d "%~dp0"
-AutoStress.exe --cleanup No --setup --auto --cb 500 90 --delay 65
+AutoStress.exe --cleanup No --setup --auto --cb 500 60 --delay 65
 goto :end
 
 :default

@@ -1,5 +1,5 @@
 ===========================================================================
-Tool version 2.5.4, Python package 3.8.10
+Tool version 2.6.0, Python package 3.8.10
 This is README.txt, the class material's top-level user guide
 Author: Kanan Fan, https://www.youtube.com/channel/UCoSrY_IQQVpmIRZ9Xf-y93g
 ===========================================================================
@@ -13,7 +13,7 @@ AutoStress.exe --cleanup No --setup --auto --standby 3 60 --hibernate 3 60 --wb 
 AutoStress.exe --cleanup No --setup --auto --standby 500 60 --delay 65
 AutoStress.exe --cleanup No --setup --auto --hibernate 500 60 --delay 65
 AutoStress.exe --cleanup No --setup --auto --wb 500 --delay 65
-AutoStress.exe --cleanup No --setup --auto --cb 500 90 --delay 65
+AutoStress.exe --cleanup No --setup --auto --cb 500 60 --delay 65
 AutoStress.exe --cleanup No --setup --auto --greset 500 --delay 65
 
 Command for --stop usage:
@@ -23,7 +23,9 @@ AutoStress.exe --cleanup No --setup --auto --cb 500 60 --delay 65 --stop "Cirrus
 'SoundWire Speakers' is a device name. If this device adds or is lost, the program will be stopped.
 
 Troubleshooting:
-Q: Show the error message of "ModuleNotFoundError: No module named 'encodings'" when AutoStress.exe was running.
+Q: Show the error message of "ModuleNotFoundError: No module named 'encodings'".
 A: Please add an environment variable when you are installing Python.
-Q: Show the error message of "The test Failed in running --auto" when AutoStress.exe was running.
+Q: Show the error message of "Can not run DeviceCompare! Please check it whether is ready for use. Error: (-2147220992, None, (None, None, None, 0, None))".
 A: Please double-click AutoStress.exe to reset DeviceCompare.exe.
+Q: Why I input "AutoStress.exe --cb 500 90", but the wake timer is actually set to 120s?
+A: Auto On Time only supports minutes, so when using "AutoStress.exe --cb 500 90", the duration specified in seconds is automatically rounded to the nearest minute.

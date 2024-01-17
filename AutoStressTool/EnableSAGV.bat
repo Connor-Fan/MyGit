@@ -4,9 +4,7 @@ rem    #          請自行更新測試軟體        #
 rem ########################################
 
 set MFG_DIR=MfgTools
-set HOTSOS_DIR=HotSOS
 set SAFE_DIR=SafeAuthClient
-set "desktopPath=%userprofile%\Desktop"
 set SAFESRV=192.168.8.7
 set SAFELOG=safe.log
 
@@ -35,7 +33,7 @@ endlocal
 REM Prompt the user to enter a string
 echo (1) does not require SAFE authentication
 echo (2) requires SAFE authentication
-set /p input=Please enter a number to enable SAGV(1~2): 
+set /p input=Please enter a number to enable SAGV(1~2):
 
 REM Use IF statements to check the input string and determine the cases
 if "%input%"=="1" goto :case1
@@ -105,7 +103,7 @@ echo Cann't ping to the safe server. Please check whether the safe server is rea
 
 :end
 REM Change to the MfgTools folder
-cd /d "%desktopPath%\%MFG_DIR%"
+cd /d "%~dp0\%MFG_DIR%"
 
 REM Check if temp.txt exists, and delete it if it does
 if exist temp.txt (
