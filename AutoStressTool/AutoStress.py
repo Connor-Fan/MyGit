@@ -13,7 +13,7 @@ from pywinauto import Application
 # Disable Fail-Safe mode in pyautogui. This allows the mouse cursor to move to (0, 0) without triggering a Fail-Safe halt.
 pyautogui.FAILSAFE = False
 # Tool version
-tool_version = "2.6.0"
+tool_version = "2.6.2"
 # Python compiler version
 python_version = "3.8.10"
 # Get a directory of your current test path
@@ -21,40 +21,40 @@ test_path = os.getcwd()
 # Get a directory of your user path
 user_path = os.path.expanduser('~')
 # Get a directory of your startup path
-startup_path = os.path.join(user_path.replace('\\', '/'), "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup").replace('\\', '/')
+startup_path = os.path.join(user_path, "AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup")
 # PwrTest folder path
-pwrtest_folder_path = os.path.join(test_path, r'PwrTest')
+pwrtest_folder_path = os.path.join(test_path, r"PwrTest")
 # DeviceCompare folder path
-device_compare_folder_path = os.path.join(test_path, r'DeviceCompareTest')
+device_compare_folder_path = os.path.join(test_path, r"DeviceCompareTest")
 # LogFile folder, it is created by DeviceCompare
-device_compare_log_path = os.path.join(test_path, r'DeviceCompareTest\LogFile')
+device_compare_log_path = os.path.join(test_path, r"DeviceCompareTest\LogFile")
 # DevList folder, it is created by DeviceCompare
-device_list_path = os.path.join(test_path, r'DeviceCompareTest\DevList')
+device_list_path = os.path.join(test_path, r"DeviceCompareTest\DevList")
 # Temp folder, it is created by DeviceCompare
-Temp_path = os.path.join(test_path, r'Temp')
+Temp_path = os.path.join(test_path, r"Temp")
 # AutoStress path
-tools_dir = os.path.join(user_path, r"Desktop\AutoStressTool")
+tools_path = os.path.join(user_path, r"Desktop\AutoStressTool")
 
 # Batch file name
 batch_filename = f'{os.path.splitext(os.path.basename(__file__))[0]}.bat'
 # Batch file path
 batch_file_path = os.path.join(startup_path, batch_filename)
 # ui_handles.txt path
-device_compare_ui_handle_path = os.path.join(tools_dir, r'Logs\UI_handles.txt')
+device_compare_ui_handle_path = os.path.join(test_path, r"Logs\UI_handles.txt")
 # pwrtestlog.log path
-pwrtestlog_path = os.path.join(tools_dir, r'PwrTest\pwrtestlog.log')
+pwrtestlog_path = os.path.join(test_path, r"PwrTest\pwrtestlog.log")
 # _DeviceManager_List.txt path
-devicemanager_list_path = os.path.join(tools_dir, r'DeviceCompareTest\DevList\_DeviceManager_List.txt')
+devicemanager_list_path = os.path.join(test_path, r"DeviceCompareTest\DevList\DeviceManager_List.txt")
 # DeviceCompare path
-device_compare_path = os.path.join(tools_dir, r'DeviceCompareTest\DeviceCompare.exe')
+device_compare_path = os.path.join(test_path, r"DeviceCompareTest\DeviceCompare.exe")
 # PwrTest.exe path
-pwrtest_path = os.path.join(tools_dir, r"PwrTest\pwrtest.exe")
+pwrtest_path = os.path.join(test_path, r"PwrTest\pwrtest.exe")
 # PlatCfg64W.exe path
-platcfgw_exe_path = os.path.join(tools_dir, r"MfgTools\PlatCfg64W.exe")
+platcfgw_exe_path = os.path.join(test_path, r"MfgTools\PlatCfg64W.exe")
 # PlatCfg2W64.exe path
-platcfg2w_exe_path = os.path.join(tools_dir, r"MfgTools\PlatCfg2W64.exe")
+platcfg2w_exe_path = os.path.join(test_path, r"MfgTools\PlatCfg2W64.exe")
 # FPTW64.exe path
-fpt_exe_path = os.path.join(tools_dir, r"FPT\FPTW64.exe")
+fpt_exe_path = os.path.join(test_path, r"FPT\FPTW64.exe")
 # The json file to save temporary values (command line arguments, ...)
 current_state_path = os.path.join(test_path, "current_state.json")
 
@@ -160,11 +160,11 @@ def create_batch_file(cmd):
     if os.path.exists(batch_file_path):
         os.remove(batch_file_path)
 
-    cmd_dir = f'cd {tools_dir}'
+    cmd_dir = f'cd {tools_path}'
         
     try:
         with open(batch_file_path, "w", encoding='utf-8') as f:
-            f.write(f'@echo off\ncd {tools_dir}\n{cmd}')
+            f.write(f'@echo off\ncd {tools_path}\n{cmd}')
             f.close()
 
     except Exception as err:
@@ -693,7 +693,7 @@ def cleanup():
         runtime.info_msg(f'Cleaning the Windows Event of Security was successful!')
 
     # set the platcfg cmd for cleaning BIOS log
-    cmd = f"{platcfg2w_exe_path} -set BiosLogClear=Clear"
+    cmd = f'"{platcfg2w_exe_path}" -set BiosLogClear=Clear'
 
     rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
@@ -702,7 +702,7 @@ def cleanup():
         runtime.info_msg(f'Cleaning BIOS logs was successful!')
 
     # set the platcfg cmd for cleaning thermal log
-    cmd = f"{platcfg2w_exe_path} -set ThermalLogClear=Clear"
+    cmd = f'"{platcfg2w_exe_path}" -set ThermalLogClear=Clear'
 
     rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
@@ -711,7 +711,7 @@ def cleanup():
         runtime.info_msg(f'Cleaning thermal logs was successful!')
 
     # set the platcfg cmd for cleaning power log
-    cmd = f"{platcfg2w_exe_path} -set PowerLogClear=Clear"
+    cmd = f'"{platcfg2w_exe_path}" -set PowerLogClear=Clear'
 
     rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
@@ -755,7 +755,7 @@ def backup_cleanup():
         runtime.info_msg(f'Cleaning the Windows Event of Security was successful!')
 
     # set the platcfg cmd for cleaning BIOS log
-    cmd = f"{platcfg2w_exe_path} -set BiosLogClear=Clear"
+    cmd = f'"{platcfg2w_exe_path}" -set BiosLogClear=Clear'
 
     rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
@@ -764,7 +764,7 @@ def backup_cleanup():
         runtime.info_msg(f'Cleaning BIOS logs was successful!')
 
     # set the platcfg cmd for cleaning thermal log
-    cmd = f"{platcfg2w_exe_path} -set ThermalLogClear=Clear"
+    cmd = f'"{platcfg2w_exe_path}" -set ThermalLogClear=Clear'
 
     rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
@@ -773,7 +773,7 @@ def backup_cleanup():
         runtime.info_msg(f'Cleaning thermal logs was successful!')
 
     # set the platcfg cmd for cleaning power log
-    cmd = f"{platcfg2w_exe_path} -set PowerLogClear=Clear"
+    cmd = f'"{platcfg2w_exe_path}" -set PowerLogClear=Clear'
 
     rc, _, std_err = dash.runcmd(cmd)
     if rc == 1 and std_err is not None:
@@ -889,7 +889,7 @@ def setup(curr_dict):
 
         # make curr_dict['stop_device'] to be a string and save the data in stop_dev
         if curr_dict['stop_device'] is not None:
-            stop_dev = " ".join(f"\"{item}\"" for item in curr_dict['stop_device'])
+            stop_dev = " ".join(f'\"{item}\"' for item in curr_dict['stop_device'])
         else:
             stop_dev = None
 
@@ -950,7 +950,7 @@ def do_standby():
 
             print(f'Start running a standby...')
 
-            cmd = f'{pwrtest_path} /cs /s:standby /c:1 /d:90 /p:{standby_time}'
+            cmd = f'"{pwrtest_path}" /cs /s:standby /c:1 /d:90 /p:{standby_time}'
             runtime.info_msg(f'Place your system in standby mode with the cmd of {cmd}')
 
             time.sleep(1)
@@ -1036,7 +1036,7 @@ def do_hibernate():
                     runtime.info_msg('Sleep State, Hibernate (S4), is not enabled on this platform')
                 else:
                     # Place the system into hibernate, wait 60 seconds, then resume. Repeat three times
-                    cmd = f'{pwrtest_path} /sleep /s:4 /c:1 /d:90 /p:{hibernate_time}'
+                    cmd = f'"{pwrtest_path}" /sleep /s:4 /c:1 /d:90 /p:{hibernate_time}'
 
                     runtime.info_msg(f'Place system in Hibernate (s:4) mode by command line: {cmd}')
 
@@ -1048,7 +1048,7 @@ def do_hibernate():
             else:
                 runtime.info_msg('Sleep state S4 (Hibernate) is available in this system')
                 # Place the system into Hibernate, wait 60 seconds, then resume. Repeat three times
-                cmd = f'{pwrtest_path} /sleep /s:4 /c:1 /d:90 /p:{hibernate_time}'
+                cmd = f'"{pwrtest_path}" /sleep /s:4 /c:1 /d:90 /p:{hibernate_time}'
 
                 runtime.info_msg(f'Place system in Hibernate (s:4) mode by command line: {cmd}')
 
@@ -1131,7 +1131,7 @@ def do_cold_boot():
     if cb_num > 0 and cb_time > 0:
         print(f'Start running a cold boot...')
         # Update wake up timer
-        cmd = f"{platcfgw_exe_path} -w Auto_On:Daily"
+        cmd = f'"{platcfgw_exe_path}" -w Auto_On:Daily'
 
         rc, _, std_err = dash.runcmd(cmd)
         if rc == 1 and std_err is not None:
@@ -1144,7 +1144,7 @@ def do_cold_boot():
         if dash.set_system_time():
             runtime.error_msgbox(f'Error setting system time')
 
-        cmd = f'{platcfgw_exe_path} -w Auto_On_Time:{(datetime.datetime.now() + datetime.timedelta(minutes=+sleep_time_minutes)).strftime("%H:%M")}'
+        cmd = f'"{platcfgw_exe_path}" -w Auto_On_Time:{(datetime.datetime.now() + datetime.timedelta(minutes=+sleep_time_minutes)).strftime("%H:%M")}'
         runtime.info_msg(f'Set Auto On Time with the cmd of {cmd}')
 
         # Run CMD wakeup
@@ -1153,6 +1153,7 @@ def do_cold_boot():
             runtime.error_msgbox(f'The wake up timer Failed in cmd of {cmd}! Error: {std_err}')
             return 1
         # CMD Shutdown
+        print(f'Start running a cold boot...')
         cmd = "shutdown -s -t 0 -f"
 
         time.sleep(1)
@@ -1173,7 +1174,7 @@ def do_global_reset():
 
     if greset_num > 0:
         print(f'Start running a global reset...')
-        cmd = f'{fpt_exe_path} -greset'
+        cmd = f'"{fpt_exe_path}" -greset'
 
         time.sleep(1)
         rc, _, std_err = dash.runcmd(cmd)
@@ -1293,7 +1294,7 @@ def test_main(args, dict, rc):
     count = curr_dict['stress_cycle']  
     # make curr_dict['stop_device'] to be a string and save the data in stop_dev
     if curr_dict['stop_device'] is not None:
-        stop_dev = " ".join(f"\"{item}\"" for item in curr_dict['stop_device'])
+        stop_dev = " ".join(f'\"{item}\"' for item in curr_dict['stop_device'])
     else:
         stop_dev = None
     # get the backup flag, True or False
@@ -1437,7 +1438,7 @@ if __name__ == '__main__':
         # show the basic information
         print("===========================================================================")
         print(f'Tool version {tool_version}, Python package {python_version}')
-        print("This is README.md, the class material's top-level user guide")
+        print("This is README.txt, the class material's top-level user guide")
         print("Author: Kanan Fan, https://www.youtube.com/channel/UCoSrY_IQQVpmIRZ9Xf-y93g")
         print("===========================================================================")
 

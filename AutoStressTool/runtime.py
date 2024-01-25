@@ -6,7 +6,7 @@ from tkinter import messagebox
 # Get a directory of your current test path
 test_path = os.getcwd()
 # A path of your runtime logs
-log_path = os.path.join(test_path, r'logs')
+log_path = os.path.join(test_path, r"logs")
 
 # create a Logs folder if it does not exist
 if not os.path.exists(log_path):
