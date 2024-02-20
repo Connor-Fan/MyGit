@@ -4,16 +4,17 @@ import time
 import psutil
 import argparse
 import datetime
+import win32api
 import pyautogui
 import dash, runtime
+import tkinter as tk
+from tkinter import ttk
 from pywinauto import Application
 
 # Globals section: define global variables here
 
-# Disable Fail-Safe mode in pyautogui. This allows the mouse cursor to move to (0, 0) without triggering a Fail-Safe halt.
-pyautogui.FAILSAFE = False
 # Tool version
-tool_version = "2.7.0"
+tool_version = "2.8.0"
 # Python compiler version
 python_version = "3.8.10"
 # Get a directory of your current test path
@@ -43,8 +44,10 @@ batch_file_path = os.path.join(startup_path, batch_filename)
 device_compare_ui_handle_path = os.path.join(test_path, r"Logs\UI_handles.txt")
 # pwrtestlog.log path
 pwrtestlog_path = os.path.join(test_path, r"PwrTest\pwrtestlog.log")
-# DeviceManager_List.txt path
+# DeviceManager_List.txt path for v1.0.1.11
 devicemanager_list_path = os.path.join(test_path, r"DeviceCompareTest\DevList\DeviceManager_List.txt")
+# _DeviceManager_List.txt path for v1.0.1.09
+_devicemanager_list_path = os.path.join(test_path, r"DeviceCompareTest\DevList\_DeviceManager_List.txt")
 # DeviceCompare path
 device_compare_path = os.path.join(test_path, r"DeviceCompareTest\DeviceCompare.exe")
 # PwrTest.exe path
@@ -57,10 +60,11 @@ platcfg2w_exe_path = os.path.join(test_path, r"MfgTools\PlatCfg2W64.exe")
 fpt_exe_path = os.path.join(test_path, r"FPT\FPTW64.exe")
 # The json file to save temporary values (command line arguments, ...)
 current_state_path = os.path.join(test_path, "current_state.json")
+
 # Initialize backup parameters
 delay_time = 0  # backup for args.delay
-stop_device = None  # backup for args.stop
-curr_dict = {}  # backup for current_state.json]
+stop_device = []  # backup for args.stop and args.stop_gui
+curr_dict = {}  # backup for current_state.json
 # backup_num[0] is for args.standby[0]
 # backup_num[1] is for args.hibernate[0]
 # backup_num[2] is for args.wb
@@ -68,13 +72,119 @@ curr_dict = {}  # backup for current_state.json]
 # backup_num[4] is for args.greset
 backup_num = [0, 0, 0, 0, 0]
 
+def on_select(event, dropdown):
+    selected_option = dropdown.get()
+    runtime.info_msg(f'Selected Option: {selected_option}')
+
+    # Add the selected item to the array here
+    stop_device.append(selected_option)
+    runtime.info_msg(f'Selected Options: {stop_device}')
+
+def filter_options(event, search_box, options, dropdown):
+    keyword = search_box.get().lower()  # Get the search keyword and convert it to lowercase
+    filtered_options = [option for option in options if keyword in option.lower()]  # Partial match
+    dropdown['values'] = filtered_options  # Update the dropdown menu to display matching options
+
+def add_all_option():
+    stop_device.append("all")
+    runtime.info_msg(f'Added all option to selected options: {stop_device}')
+
+def reset_selection():
+    # Cancel all selections
+    stop_device.clear()
+    runtime.info_msg("All selections canceled.")
+
+def cancel_last_selection():
+    if stop_device:
+        # Cancel the last selection
+        canceled_option = stop_device.pop()
+        runtime.info_msg(f'Last selection canceled: {canceled_option}')
+    else:
+        runtime.info_msg("No previous selection to cancel.")
+
+def confirm_selection(root):
+    # Close the tkinter window and return stop_device
+    root.destroy()
+
+def failstop_gui():
+    """
+    This function creates a graphical user interface for handling device failures.
+
+    Returns:
+        tuple: A tuple containing two elements:
+               - int: Return code (0 for success, 1 for failure).
+               - None: Stop device information.
+    """
+
+    try:
+        # Create the main window
+        root = tk.Tk()
+        root.title("AutoStress Dropdown Menu")
+
+        # Read options from a txt file
+        if get_file_info(device_compare_path) == "1.0.1.11":
+            rc, options = dash.read_txt_file_to_list(devicemanager_list_path)
+        else:
+            rc, options = dash.read_txt_file_to_list(_devicemanager_list_path)
+
+        if rc == 1 or options is None:
+            raise Exception(f'Can not access {devicemanager_list_path}, {_devicemanager_list_path}')
+
+        # Calculate the width of the longest option
+        max_option_length = max(len(option) for option in options)
+
+        # Calculate the appropriate width for the dropdown menu, using 10 as the minimum width
+        dropdown_width = max(max_option_length, 10)
+
+        # Create the dropdown menu using the calculated width
+        dropdown = ttk.Combobox(root, values=options, width=dropdown_width)
+        dropdown.set("Select Item")  # Default displayed text
+        dropdown.pack(pady=20)
+
+        # Create search box label
+        search_label = tk.Label(root, text="Search:")
+        search_label.pack(side="left", padx=(10, 5), pady=5)
+
+        search_box = tk.Entry(root, width=20)
+        search_box.pack(side="left", padx=5, pady=5)
+        # Bind the input event to filter options in real-time
+        search_box.bind("<KeyRelease>", lambda event: filter_options(event, search_box, options, dropdown))
+
+        # Set the callback function when an option changes, passing the dropdown object as an argument
+        dropdown.bind("<<ComboboxSelected>>", lambda event: on_select(event, dropdown))
+
+        # Create the button to cancel the last selection
+        cancel_last_button = tk.Button(root, text="Cancel Last Selection", command=cancel_last_selection)
+        cancel_last_button.pack(side="left", padx=5, pady=5)
+
+        # Create a button to add the "all" option
+        add_all_button = tk.Button(root, text="Select All", command=add_all_option)
+        add_all_button.pack(side="left", padx=5, pady=5)
+
+        # Create the confirm button
+        confirm_button = tk.Button(root, text="Confirm", command=lambda: confirm_selection(root))
+        confirm_button.pack(side="left", padx=5, pady=5)
+
+        # Create the reset button
+        reset_button = tk.Button(root, text="Reset", command=reset_selection)
+        reset_button.pack(side="left", padx=5, pady=5)
+
+        # Start the main loop
+        root.mainloop()
+
+        return 0, stop_device
+
+    except Exception as err:
+        runtime.error_msgbox(f'An error occurred: {err}')
+        return 1, None
+
 def failstop(device, count):
     """
     Check whether devices have failed.
 
     Args:
-        device (str): Devices that you want to stop.
-        count (int): A counter for counting power cycles.
+        device(str): Devices that you want to stop.
+        count(int): A counter for counting power cycles.
 
     Returns:
         (int, bool): Return code, stop flag.
@@ -98,36 +208,40 @@ def failstop(device, count):
     elif os.path.exists(devlist_ac_pass_path):
         return 0, stop_flag
     elif os.path.exists(devlist_dc_fail_path):
-        fail_devlist = dash.read_txt_file(devlist_dc_fail_path)
+        _, fail_devlist = dash.read_txt_file_to_string(devlist_dc_fail_path)
         runtime.debug_msg(f'The fail devlist goes with {devlist_dc_fail_path}')
     elif os.path.exists(devlist_ac_fail_path):
-        fail_devlist = dash.read_txt_file(devlist_ac_fail_path)
+        _, fail_devlist = dash.read_txt_file_to_string(devlist_ac_fail_path)
         runtime.debug_msg(f'The fail devlist goes with {devlist_dc_fail_path}')
     else:
-        runtime.error_msgbox(f'Can not find the txt file of {devlist_dc_pass_path}')
-        runtime.error_msgbox(f'Can not find the txt file of {devlist_ac_pass_path}')
-        runtime.error_msgbox(f'Can not find the txt file of {devlist_dc_fail_path}')
-        runtime.error_msgbox(f'Can not find the txt file of {devlist_ac_fail_path}')
+        runtime.error_msgbox(f'Can not access {devlist_dc_pass_path}, {devlist_ac_pass_path}, {devlist_dc_fail_path}, {devlist_ac_fail_path}')
         runtime.debug_msg(f'The counter of curr_dict[stress_cycle] is {count}')
         return 1, None
 
-    devlis = dash.read_txt_file(devicemanager_list_path)
+    if get_file_info(device_compare_path) == "1.0.1.11":
+        rc, devlis = dash.read_txt_file_to_string(devicemanager_list_path)
+    else:
+        rc, devlis = dash.read_txt_file_to_string(_devicemanager_list_path)
+
+    if rc == 1 or devlis is None:
+        runtime.error_msgbox(f'Can not access {devicemanager_list_path}, {_devicemanager_list_path}')
+        return 1, None
 
     if devlis != fail_devlist:
         for i in range(0, len(device)):
             # for stopping all devices
             if device[i].lower() == "all":
-                runtime.info_msg(f'Find out devices get lost on your system')
+                runtime.warning_msgbox(f'Find out devices get lost on your system')
                 stop_flag = True
                 return 0, stop_flag 
             # for devices lost
             elif device[i] not in fail_devlist and device[i] in devlis:
-                runtime.info_msg(f'Find out {device[i]} get lost on your system')
+                runtime.warning_msgbox(f'Find out {device[i]} get lost on your system')
                 stop_flag = True
                 return 0, stop_flag
             # for devices add
             elif device[i] in fail_devlist and device[i] not in devlis:
-                runtime.info_msg(f'Find out {device[i]} is added on your system')
+                runtime.warning_msgbox(f'Find out {device[i]} is added on your system')
                 stop_flag = True
                 return 0, stop_flag
             else:
@@ -192,6 +306,36 @@ def check_uac_flag():
 
     return 0, uac_flag
 
+def get_file_info(src):
+    """
+    Retrieve the version information of an executable file.
+
+    Args:
+        src(str): The path to the executable file.
+
+    Returns:
+        str: The file version in the format "major.minor.revision.build".
+            Returns None if version information cannot be retrieved.
+    """
+
+    try:
+        # Get the file version info
+        version_info = win32api.GetFileVersionInfo(src, "\\")
+            
+        # Construct the file version from FileVersionMS and FileVersionLS
+        file_version = ".".join(map(str, (
+            version_info['FileVersionMS'] >> 16,
+            version_info['FileVersionMS'] & 0xFFFF,
+            version_info['FileVersionLS'] >> 16,
+            version_info['FileVersionLS'] & 0xFFFF
+        )))
+
+        return file_version
+
+    except Exception as err:
+        runtime.error_msgbox(f'An error occurred: {err}')
+        return None
+
 def get_sleep_state():
     """
     Check to know ms, s3, s4 are supported or not by this system
@@ -224,6 +368,30 @@ def get_sleep_state():
 
     return is_ms_supported, is_s3_supported, is_s4_supported
 
+def get_process_id_by_name(name):
+    """
+    Get process id of application by name
+
+    Args:
+        name(str): application name need to get process id
+
+    Returns:
+        (bool, int/str): return code, process id/error string
+    """
+
+    pid = None
+    try:
+        for proc in psutil.process_iter():
+            if proc.name() == name:
+                pid = proc.pid
+                break
+
+    except Exception as err:
+        runtime.error_msgbox(f'get_process_id_by_name: {err}')
+        return 1, None
+
+    return 0, pid
+
 def parse_cmdline(cmd_line=None):
     """
     Parse args from command line
@@ -242,11 +410,14 @@ def parse_cmdline(cmd_line=None):
                         'If --backup_cleanup is enabled, the program will clean Windows and BIOS event logs with each power cycle.')
     parser.add_argument('--backup_cleanup', default=None, action='store_true', help='[Internal Use Only] Clean Windows events and BIOS logs (Not for general use).')
     parser.add_argument('--setup', default=None, action='store_true', help='Set up system settings like UAC, memory dump settings, and Windows power plan.')
-    parser.add_argument('--auto', default=None, action='store_true', 
+    parser.add_argument('--auto', default=None, action='store_true',
                     help='Run DeviceCompare automatically. If DeviceCompare is running, please double click AutoStress.exe to teardown your system first.')
-    parser.add_argument('--stop', nargs='+', dest='stop', default=None, type=str,
+    parser.add_argument('--stop', nargs='+', dest='stop', default=None, type=str, metavar=('device name'),
                     help='If DeviceCompare gets negetive results, the autoscript will be stopped.\n'
                         'Usage: --stop all or --stop "SanDisk" "SoundWire Speakers".\n'
+                        'Note: Use with --auto to enable the stop functionality. Without --auto, the stop feature will not be active.')
+    parser.add_argument('--stop_gui', default=None, action='store_true',
+                    help='If DeviceCompare gets negative results in the graphical user interface, the autoscript will be stopped.\n'
                         'Note: Use with --auto to enable the stop functionality. Without --auto, the stop feature will not be active.')
     parser.add_argument('--standby', nargs=2, dest='standby', default=None, type=int, metavar=('iterations', 'duration'),
                     help='Enter standby mode multiple times, each time staying in standby for a specified duration.\n'
@@ -278,30 +449,6 @@ def parse_cmdline(cmd_line=None):
 
     return args
 
-def get_process_id_by_name(name):
-    """
-    Get process id of application by name
-
-    Args:
-        name(str): application name need to get process id
-
-    Returns:
-        (bool, int/str): return code, process id/error string
-    """
-
-    pid = None
-    try:
-        for proc in psutil.process_iter():
-            if proc.name() == name:
-                pid = proc.pid
-                break
-
-    except Exception as err:
-        runtime.error_msgbox(f'get_process_id_by_name: {err}')
-        return 1, None
-
-    return 0, pid
-
 def parse_argument(args):
     """
     Parses command-line arguments related to system backup.
@@ -313,22 +460,25 @@ def parse_argument(args):
         list[int]: A list containing standby, hibernate, warmboot, coldboot, and global reset.
     """
 
+    stop_device = args.stop if args.stop is not None else curr_dict.get('stop_device', [])
     standby_num = args.standby[0] if args.standby is not None else 0
     hibernate_num = args.hibernate[0] if args.hibernate is not None else 0
     wb_num = args.wb if args.wb is not None else 0
     cb_num = args.cb[0] if args.cb is not None else 0
     greset_num = args.greset if args.greset is not None else 0
     backup_num = [standby_num, hibernate_num, wb_num, cb_num, greset_num]
+    runtime.debug_msg(f'backup_num: {backup_num}, stop_device: {stop_device}')
 
-    return backup_num
+    return backup_num, stop_device
 
-def set_current_test_mode(args, count, backup_num):
+def set_current_test_mode(args, count, device, backup_num):
     """
     Write the current arguments into a JSON file.
 
     Args:
         args (Namespace): Namespace containing parsed command-line arguments.
         count (int): Stress cycle count.
+        device (str): Device for which the stop action is applied.
         backup_number (list): List containing standby, hibernate, write-back, clean backup, and global reset numbers.
 
     Returns:
@@ -353,7 +503,11 @@ def set_current_test_mode(args, count, backup_num):
 
     if args.stop is not None:
         test_args.append(f'--stop')
-        curr_dict['stop_device'] = args.stop
+        curr_dict['stop_device'] = device
+
+    if args.stop_gui is not None:
+        test_args.append(f'--stop_gui')
+        curr_dict['stop_device'] = device
 
     if args.standby is not None:
         test_args.append(f'--standby')
@@ -649,7 +803,7 @@ def setup(curr_dict):
     Initializes system settings.
 
     Args:
-        curr_dict (dict): Current test settings.
+        curr_dict(dict): Current test settings.
 
     Returns:
         (bool): Return code (0 if successful, 1 if errors occurred).
@@ -713,6 +867,8 @@ def setup(curr_dict):
                 backup_cmd = backup_cmd + str(curr_args) + ' '
             elif str(curr_args) == '--auto':
                 backup_cmd = backup_cmd + str(curr_args) + ' '
+            elif str(curr_args) == '--stop_gui':
+                backup_cmd = backup_cmd + str(curr_args) + ' '
             elif str(curr_args) == '--stop':
                 # make curr_dict['stop_device'] to be a string and save the data in stop_device
                 stop_device = " ".join(f'\"{item}\"' for item in curr_dict['stop_device'])
@@ -761,7 +917,7 @@ def do_standby(args):
     Places the system in standby mode and performs the specified number of cycles.
 
     Args:
-        args (argparse.Namespace): Parsed command-line arguments.
+        args(argparse.Namespace): Parsed command-line arguments.
 
     Returns:
         int: Return code (0 if successful, 1 if errors occurred).
@@ -774,15 +930,13 @@ def do_standby(args):
                 return 1
 
             # If the user inputs '--stop', there wouldn't be a delay time set
-            if args.stop is None or index == 0:
+            if (args.stop is None and args.stop_gui is None) or index == 0:
                 for i in range(args.delay if args.delay is not None else delay_time, 0, -1):
                     print(f'Wait {i}s to do standby...', end='\r')
                     time.sleep(1)
 
             # reflash dict data from current_state.json
-            curr_dict = dash.read_json_file(current_state_path)
-            if curr_dict == 1 or curr_dict is None:
-                raise Exception(f'The current dict is empty! Failed in accessing {current_state_path}')
+            _, curr_dict = dash.read_json_file(current_state_path)
 
             # Determine whether to perform backup based on the user's input value
             if '--cleanup' in curr_dict['curr_test_args'] and curr_dict['cleanup_value'] == 'yes':
@@ -801,31 +955,35 @@ def do_standby(args):
                 runtime.error_msgbox(f'Can not place your system in standby mode with the cmd of {cmd}! Error: {std_err}')
                 return 1
 
-            pwrtestlog = dash.read_txt_file(pwrtestlog_path)
-            if pwrtestlog is not None and pwrtestlog != 1:
+            rc, pwrtestlog = dash.read_txt_file_to_string(pwrtestlog_path)
+            if "Virtual power button driver not found" in pwrtestlog:
+                runtime.warning_msgbox(f'Please install the Windows Device Testing Framework (WDTF)')
+                pass
+            elif pwrtestlog is not None and rc == 0:
                 runtime.info_msg(f'{pwrtestlog}')
             else:
                 runtime.error_msgbox(f'Can not access {pwrtestlog_path}')
                 return 1
 
             count = curr_dict['stress_cycle'] + 1
+            backup_num, stop_device = parse_argument(args)
 
-            if set_current_test_mode(args, count, parse_argument(args)):
+            if set_current_test_mode(args, count, stop_device, backup_num):
                 runtime.error_msgbox(f'Return error! Failed in set_current_test_mode()')
                 return 1
 
-            if args.stop is not None and args.stop:
+            if args.stop is not None or args.stop_gui is not None:
                 # set the delay time for waitting DeviceCompare is ready
                 for i in range(args.delay if args.delay is not None else delay_time, 0, -1):
-                    print(f'Wait {i}s to make DeviceCompare ready...', end='\r')
+                    print(f'Wait {i}s to do standby...', end='\r')
                     time.sleep(1)
 
                 rc, stop_flag = failstop(curr_dict['stop_device'], count)
                 if rc:
-                    runtime.error_msgbox(f'Test Failed in failstop()')
+                    runtime.error_msg(f'Test Failed in failstop()')
                     return 1
                 elif stop_flag:
-                    runtime.info_msgbox(f'Find out the failed devices and stop running the auto script')
+                    runtime.warning_msg(f'Find out the failed devices and stop running the auto script')
                     return 1
                 else:
                     runtime.info_msg(f'All devices are working well')
@@ -837,7 +995,7 @@ def do_hibernate(args):
     Places the system in hibernate mode and performs the specified number of cycles.
 
     Args:
-        args (argparse.Namespace): Parsed command-line arguments.
+        args(argparse.Namespace): Parsed command-line arguments.
 
     Returns:
         int: Return code (0 if successful, 1 if errors occurred).
@@ -850,15 +1008,13 @@ def do_hibernate(args):
                 return 1
 
             # If the user inputs '--stop', there wouldn't be a delay time set
-            if args.stop is None or index == 0:
+            if (args.stop is None and args.stop_gui is None) or index == 0:
                 for i in range(args.delay if args.delay is not None else delay_time, 0, -1):
                     print(f'Wait {i}s to do hibernate...', end='\r')
                     time.sleep(1)
 
             # reflash dict data from current_state.json
-            curr_dict = dash.read_json_file(current_state_path)
-            if curr_dict == 1 or curr_dict is None:
-                raise Exception(f'The current dict is empty! Failed in accessing {current_state_path}')
+            _, curr_dict = dash.read_json_file(current_state_path)
 
             # Determine whether to perform backup based on the user's input value
             if '--cleanup' in curr_dict['curr_test_args'] and curr_dict['cleanup_value'] == 'yes':
@@ -874,6 +1030,7 @@ def do_hibernate(args):
                 _, _, is_s4_supported = get_sleep_state()
                 if not is_s4_supported:
                     runtime.info_msg('Sleep State, Hibernate (S4), is not enabled on this platform')
+                    return 0
                 else:
                     # Place the system into hibernate, wait 60 seconds, then resume. Repeat three times
                     cmd = f'"{pwrtest_path}" /sleep /s:4 /c:1 /d:90 /p:{args.hibernate[1]}'
@@ -898,31 +1055,32 @@ def do_hibernate(args):
                     runtime.error_msgbox(f'Can not place your system in hibernate mode with the cmd of {cmd}! Error: {std_err}')
                     return 1
 
-            pwrtestlog = dash.read_txt_file(pwrtestlog_path)
-            if pwrtestlog is not None and pwrtestlog != 1:
+            rc, pwrtestlog = dash.read_txt_file_to_string(pwrtestlog_path)
+            if pwrtestlog is not None and rc == 0:
                 runtime.info_msg(f'{pwrtestlog}')
             else:
                 runtime.error_msgbox(f'Can not access {pwrtestlog_path}')
                 return 1
 
             count = curr_dict['stress_cycle'] + 1
+            backup_num, stop_device = parse_argument(args)
 
-            if set_current_test_mode(args, count, parse_argument(args)):
+            if set_current_test_mode(args, count, stop_device, backup_num):
                 runtime.error_msgbox(f'Return error! failed in set_current_test_mode()')
                 return 1
 
-            if args.stop is not None and args.stop:
+            if args.stop is not None or args.stop_gui is not None:
                 # set the delay time for waitting DeviceCompare is ready
                 for i in range(args.delay if args.delay is not None else delay_time, 0, -1):
-                    print(f'Wait {i}s to make DeviceCompare ready...', end='\r')
+                    print(f'Wait {i}s to do hibernate...', end='\r')
                     time.sleep(1)
 
                 rc, stop_flag = failstop(curr_dict['stop_device'], count)
                 if rc:
-                    runtime.error_msgbox(f'Test Failed in failstop()')
+                    runtime.error_msg(f'Test Failed in failstop()')
                     return 1
                 elif stop_flag:
-                    runtime.info_msgbox(f'Find out the failed devices and stop running the auto script')
+                    runtime.warning_msg(f'Find out the failed devices and stop running the auto script')
                     return 1
                 else:
                     runtime.info_msg(f'All devices are working well')
@@ -934,7 +1092,7 @@ def do_warm_boot(args):
     Place system in warm boot mode
 
     Args:
-        args (argparse.Namespace): Parsed command-line arguments.
+        args(argparse.Namespace): Parsed command-line arguments.
 
     Returns:
         (bool): tuple(int[0, 1])
@@ -1007,7 +1165,7 @@ def do_global_reset(args):
     Place system in global reset mode
 
     Args:
-        args (argparse.Namespace): Parsed command-line arguments.
+        args(argparse.Namespace): Parsed command-line arguments.
 
     Returns:
         (bool): tuple(int[0, 1])
@@ -1073,12 +1231,11 @@ def test_teardown():
             main_window = app.window(title_re="Device Compare")
             # wait to be ready
             main_window.wait('visible', timeout=30)
-            # initialize x, y coordinate
-            pyautogui.moveTo(0, 0, duration=0.25)
-            time.sleep(1)
             # stop
+            time.sleep(1)
             main_window.child_window(title="Stop", auto_id="b_start", control_type="Button").click()
-            runtime.info_msg(f'Closing DeviceCompare is done')
+
+            runtime.info_msg(f'Stopping DeviceCompare is done')
         else:
             runtime.info_msg(f'DeviceCompare is not working! Do not need to stop it')
 
@@ -1109,17 +1266,14 @@ def run_device_compare():
         main_window.wait('visible', timeout=30)
         # dump UI handles of DeviceCompare.
         #main_window.print_control_identifiers(filename=device_compare_ui_handle_path)
-        # initialize x, y coordinate
-        pyautogui.moveTo(0, 0, duration=0.25)
-        # delay 1s every action
-        time.sleep(1)
         # reset
+        time.sleep(1)
         main_window.child_window(title="Reset", auto_id="b_reset", control_type="Button").click()
-        time.sleep(1)
         # sync
-        main_window.child_window(title="Sync", auto_id="b_sync", control_type="Button").click()
         time.sleep(1)
+        main_window.child_window(title="Sync", auto_id="b_sync", control_type="Button").click()
         # start
+        time.sleep(1)
         main_window.child_window(title="Start", auto_id="b_start", control_type="Button").click()
 
     except Exception as err:
@@ -1128,15 +1282,15 @@ def run_device_compare():
 
     print(f'Running DeviceCompare is done')
 
-    return 0 
+    return 0
 
 def test_main(args):
     """
     This function contains the main logic for executing the test.
 
     Args:
-        args (argparse.Namespace): Parsed command-line arguments.
-    
+        args(argparse.Namespace): Parsed command-line arguments.
+
     Returns:
         bool: True if the test passes, False otherwise.
     """
@@ -1148,12 +1302,11 @@ def test_main(args):
         return 1
 
     # reflash dict data from current_state.json
-    curr_dict = dash.read_json_file(current_state_path)
-    if curr_dict == 1 or curr_dict is None:
-        raise Exception(f'The current dict is empty! Failed in accessing {current_state_path}')
+    _, curr_dict = dash.read_json_file(current_state_path)
 
-    # get stress cycles
+    # get stress cycles, backup_num
     count = curr_dict['stress_cycle']
+    backup_num, stop_device = parse_argument(args)
 
     # set a delay time to wait for DeviceCompare to be ready
     if args.wb is not None and args.wb > 0:
@@ -1168,21 +1321,19 @@ def test_main(args):
         for i in range(args.delay if args.delay is not None else delay_time, 0, -1):
             print(f'Wait {i}s to do a global reset...', end='\r')
             time.sleep(1)
-    elif args.standby is not None or args.hibernate is not None:
-        pass  # bypass the delay time when the last cycle is in standby or hibernate mode
-    else:
+    elif args.stop is not None or args.stop_gui is not None:
         for i in range(args.delay if args.delay is not None else delay_time, 0, -1):
             print(f'Wait {i}s to make DeviceCompare ready...', end='\r')
             time.sleep(1)
 
-    if args.stop is not None and args.stop:
+    if args.stop is not None or args.stop_gui is not None:
         runtime.debug_msg(f'The current dict of stop_device: {curr_dict["stop_device"]}')
         rc, stop_flag = failstop(curr_dict['stop_device'], count)
         if rc:
-            runtime.error_msgbox(f'The test Failed in failstop()')
+            runtime.error_msg(f'The test Failed in failstop()')
             return 1
         elif stop_flag:
-            runtime.info_msgbox(f'Find out the failed devices and stop running the auto script')
+            runtime.warning_msg(f'Find out the failed devices and stop running the auto script')
             return 1
         else:
             runtime.info_msg(f'All devices are working well')
@@ -1191,15 +1342,19 @@ def test_main(args):
 
     if args.wb is not None and args.wb > 0:
         runtime.debug_msg(f'The current dict of wb_num: {curr_dict["wb_num"]}')
-        backup_num = [0, 0, curr_dict['wb_num'] - 1, args.cb[0], args.greset]  # reflash curr_dict['wb_num']
+        backup_num[2] = backup_num[2] - 1  # curr_dict['wb_num'] - 1
 
         for curr_args in curr_dict['curr_test_args']:
             if str(curr_args) == '--cleanup' and str(curr_dict['cleanup_value']) == 'yes':
                 backup_cmd = backup_cmd + '--backup_cleanup' + ' '
             if str(curr_args) == '--backup_cleanup':
                 backup_cmd = backup_cmd + str(curr_args) + ' '
+            # make curr_dict['stop_device'] to be a string and save the data in stop_device
+            elif str(curr_args) == '--stop_gui':
+                stop_device = " ".join(f'\"{item}\"' for item in curr_dict['stop_device'])
+
+                backup_cmd = backup_cmd + f'--stop {stop_device} '
             elif str(curr_args) == '--stop':
-                # make curr_dict['stop_device'] to be a string and save the data in stop_device
                 stop_device = " ".join(f'\"{item}\"' for item in curr_dict['stop_device'])
 
                 backup_cmd = backup_cmd + str(curr_args) + ' ' + str(stop_device) + ' '
@@ -1222,20 +1377,24 @@ def test_main(args):
 
     elif args.cb is not None and args.cb[0] > 0:
         runtime.debug_msg(f'The current dict of cb_num: {curr_dict["cb_num"]}')
-        backup_num = [0, 0, 0, curr_dict['cb_num'] - 1, args.greset]  # reflash curr_dict['cb_num']
+        backup_num[3] = backup_num[3] - 1  # curr_dict['cb_num'] - 1
 
         for curr_args in curr_dict['curr_test_args']:
             if str(curr_args) == '--cleanup' and str(curr_dict['cleanup_value']) == 'yes':
                 backup_cmd = backup_cmd + '--backup_cleanup' + ' '
             if str(curr_args) == '--backup_cleanup':
                 backup_cmd = backup_cmd + str(curr_args) + ' '
+            # make curr_dict['stop_device'] to be a string and save the data in stop_device
+            elif str(curr_args) == '--stop_gui':
+                stop_device = " ".join(f'\"{item}\"' for item in curr_dict['stop_device'])
+
+                backup_cmd = backup_cmd + f'--stop {stop_device} '
             elif str(curr_args) == '--stop':
-                # make curr_dict['stop_device'] to be a string and save the data in stop_device
                 stop_device = " ".join(f'\"{item}\"' for item in curr_dict['stop_device'])
 
                 backup_cmd = backup_cmd + str(curr_args) + ' ' + str(stop_device) + ' '
-            elif str(curr_args) == '--cb' and backup_num[3] > 0:
-                backup_cmd = backup_cmd + str(curr_args) + ' ' + str(backup_num[3]) + ' ' + str(curr_dict['cb_time']) + ' '
+            elif str(curr_args) == '--cb' and (backup_num[3] - 1) > 0:
+                backup_cmd = backup_cmd + str(curr_args) + ' ' + str(backup_num[3] - 1) + ' ' + str(curr_dict['cb_time']) + ' '
             elif str(curr_args) == '--greset':
                 backup_cmd = backup_cmd + str(curr_args) + ' ' + str(curr_dict['greset_num']) + ' '
             elif str(curr_args) == '--delay':
@@ -1251,15 +1410,19 @@ def test_main(args):
 
     elif args.greset is not None and args.greset > 0:
         runtime.debug_msg(f'The current dict of greset_num: {curr_dict["greset_num"]}')
-        backup_num = [0, 0, 0, 0, curr_dict['greset_num'] - 1]  # reflash curr_dict['cb_num']
+        backup_num[4] = backup_num[4] - 1  # curr_dict['greset_num'] - 1
 
         for curr_args in curr_dict['curr_test_args']:
             if str(curr_args) == '--cleanup' and str(curr_dict['cleanup_value']) == 'yes':
                 backup_cmd = backup_cmd + '--backup_cleanup' + ' '
             if str(curr_args) == '--backup_cleanup':
                 backup_cmd = backup_cmd + str(curr_args) + ' '
+            # make curr_dict['stop_device'] to be a string and save the data in stop_device
+            elif str(curr_args) == '--stop_gui':
+                stop_device = " ".join(f'\"{item}\"' for item in curr_dict['stop_device'])
+
+                backup_cmd = backup_cmd + f'--stop {stop_device} '
             elif str(curr_args) == '--stop':
-                # make curr_dict['stop_device'] to be a string and save the data in stop_device
                 stop_device = " ".join(f'\"{item}\"' for item in curr_dict['stop_device'])
 
                 backup_cmd = backup_cmd + str(curr_args) + ' ' + str(stop_device) + ' '
@@ -1276,34 +1439,30 @@ def test_main(args):
             runtime.error_msgbox(f'Return error! Failed in create_batch_file() with the cmd of {backup_cmd}')
             return 1
     else:
-        backup_num = [0, 0, 0, 0, 0]  # for local variable to use
-        if set_current_test_mode(args, count, backup_num):
-            runtime.error_msgbox(f'Return error! Failed in set_current_test_mode()')
-            return 1
         # handle for finish test
         runtime.info_msg(f'Finished {sys.argv[0]} rc=0')
         return test_teardown()
 
     # curr_dict['stress_cycle'] + 1 when the power cycle is done
-    if set_current_test_mode(args, count + 1, backup_num):
+    if set_current_test_mode(args, count + 1, stop_device, backup_num):
         runtime.error_msgbox(f'Return error! Failed in set_current_test_mode()')
         return 1
 
     # run backup_cleanup
     if args.backup_cleanup is not None and backup_cleanup():
-        runtime.error_msgbox(f'Return error! Failed in backup_cleanup()')
+        runtime.error_msg(f'Return error! Failed in backup_cleanup()')
         return 1
     # run warm boot
     if args.wb is not None and do_warm_boot(args):
-        runtime.error_msgbox(f'Return error! Failed in do_warm_boot()')
+        runtime.error_msg(f'Return error! Failed in do_warm_boot()')
         return 1
     # run cold boot
     if args.cb is not None and do_cold_boot(args):
-        runtime.error_msgbox(f'Return error! Failed in do_cold_boot()')
+        runtime.error_msg(f'Return error! Failed in do_cold_boot()')
         return 1
     # run global reset
     if args.greset is not None and do_global_reset(args):
-        runtime.error_msgbox(f'Return error! Failed in do_global_reset()')
+        runtime.error_msg(f'Return error! Failed in do_global_reset()')
         return 1
 
     return 0
@@ -1328,20 +1487,22 @@ if __name__ == '__main__':
 
         # for counting stress cycle
         if os.path.exists(current_state_path):
-            curr_dict = dash.read_json_file(current_state_path)
-            if curr_dict == 1 or curr_dict is None:
+            rc, curr_dict = dash.read_json_file(current_state_path)
+            if rc:
                 raise Exception(f'The current dict is empty! Failed in accessing {current_state_path}')
 
             count = curr_dict['stress_cycle']
         else:
             count = 0
 
-        # back up current agrs, num and time
-        if set_current_test_mode(args, count, parse_argument(args)):
+        backup_num, stop_device = parse_argument(args)
+
+        # backup current agrs, iterations and devices
+        if set_current_test_mode(args, count, stop_device, backup_num):
             raise Exception(f'Return error! Failed in setting the test arguments')
 
-        curr_dict = dash.read_json_file(current_state_path)
-        if curr_dict == 1 or curr_dict is None:
+        rc, curr_dict = dash.read_json_file(current_state_path)
+        if rc:
             raise Exception(f'The current dict is empty! Failed in accessing {current_state_path}')
 
         # set environment
@@ -1351,6 +1512,15 @@ if __name__ == '__main__':
         # run DeviceCompare
         if args.auto is not None and run_device_compare():
             raise Exception(f'The test Failed in running --auto')
+
+        # If the user inputs '--stop_gui', there will override curr_dict['stop_device']
+        if args.stop_gui is not None:
+            rc, stop_device = failstop_gui()
+            if rc:
+                raise Exception(f'The test Failed in running --stop_gui')
+
+            if set_current_test_mode(args, count, stop_device, backup_num):
+                raise Exception(f'Return error! Failed in setting the test arguments')
 
         # run standby
         if args.standby is not None and do_standby(args):
@@ -1362,7 +1532,7 @@ if __name__ == '__main__':
 
         # Test main
         if test_main(args):
-            raise Exception(f'The test Failed in running --wb, --cb and --greset')
+            raise Exception(f'The test Failed in running test_main()')
 
     except Exception as err:
         runtime.handle_exception(f'Error: {err}. Please check runtime.log in logs folder for more details')

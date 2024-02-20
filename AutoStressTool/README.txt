@@ -1,5 +1,5 @@
 ===========================================================================
-Tool version 2.7.0, Python package 3.8.10
+Tool version 2.8.0, Python package 3.8.10
 This is README.txt, the class material's top-level user guide
 Author: Kanan Fan, https://www.youtube.com/channel/UCoSrY_IQQVpmIRZ9Xf-y93g
 ===========================================================================
@@ -18,8 +18,9 @@ AutoStress.exe --cleanup No --setup --auto --wb 500 --delay 65
 AutoStress.exe --cleanup No --setup --auto --cb 500 60 --delay 65
 AutoStress.exe --cleanup No --setup --auto --greset 500 --delay 65
 
-**Command for --stop usage:**
-AutoStress.exe --cleanup No --setup --auto --cb 500 60 --delay 65 --stop all
+**Command for --stop or --stop_gui usage:**
+AutoStress.exe --cleanup No --setup --auto --cb 500 60 --delay 65 --stop_gui
+AutoStress.exe --cleanup No --setup --auto --cb 500 60 --delay 65 --stop "all"
 AutoStress.exe --cleanup No --setup --auto --cb 500 60 --delay 65 --stop "Cirrus Logic" "SoundWire Speakers"
 "all" is used as a wildcard, indicating that the program will be stopped if any device is added or lost.
 "SoundWire Speakers" is a specific device name. If this device is either added or lost, the program will be stopped accordingly.

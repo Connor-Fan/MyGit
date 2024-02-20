@@ -37,9 +37,9 @@ def runcmd(cmd):
 
     return return_code, std_out, std_err
 
-def read_txt_file(src):
+def read_txt_file_to_string(src):
     """
-    To read a txt file
+    To read a txt file and return as a single string.
 
     Args:
         src(str): file name including path
@@ -49,8 +49,8 @@ def read_txt_file(src):
     """
 
     if not os.path.exists(src):
-        runtime.error_msg(f'Can not find the txt file of {src}')
-        return 1
+        runtime.error_msg(f'Can not find the file at the specified path of {src}')
+        return 1, None
 
     try:
         # Reads a txt file and creates string data
@@ -59,9 +59,35 @@ def read_txt_file(src):
 
     except Exception as err:
         runtime.handle_exception(f'Can not read the file of {src}! Error: {err}')
-        return 1
+        return 1, None
 
-    return data
+    return 0, data
+
+def read_txt_file_to_list(src):
+    """
+    To read a txt file and return as a list of lines.
+
+    Args:
+        src(str): file name including path
+
+    Returns:
+        (bool, str): return code, the content of a txt file
+    """
+
+    if not os.path.exists(src):
+        runtime.error_msg(f'Can not find the file at the specified path of {src}')
+        return 1, None
+
+    try:
+        # Reads a txt file and creates string data
+        with open(src, 'r', encoding='utf-8') as fin:
+            data = [line.strip() for line in fin.readlines()]
+
+    except Exception as err:
+        print(f'Cannot read the file of {src}! Error: {err}')
+        return 1, None
+
+    return 0, data
 
 def read_json_file(src):
     """
@@ -75,8 +101,8 @@ def read_json_file(src):
     """
 
     if not os.path.exists(src):
-        runtime.error_msg(f'Can not find the json file of {src}')
-        return 1
+        runtime.error_msg(f'Can not find the file at the specified path of {src}')
+        return 1, None
 
     try:
         # Reads a json file and creates dicts
@@ -85,9 +111,9 @@ def read_json_file(src):
 
     except Exception as err:
         runtime.handle_exception(f'Can not read the file of {src}! Error: {err}')
-        return 1
+        return 1, None
 
-    return json_dict
+    return 0, json_dict
 
 def write_json_file(src, json_dict):
     """
