@@ -67,51 +67,51 @@
 #define PCH_PWRM_BASE_ADDRESS                                    0xFE000000      ///< PMC MBAR MMIO base address
 
 #define R_PMC_PWRM_GBLRST_CAUSE0                                 0x1924          ///< Global Reset Causes 0
-#define B_PMC_PWRM_GBLRST_CAUSE0_IOE_​GRST_​TRIGGER                BIT31           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_IOE_​SOC_​PMC_​TYPE_​8_​GRST_​TRIGGER BIT31           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_ESE_​GBLRST_​REQ                  BIT30           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_IOE_​THRM                        BIT28           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_GFX_​THRM                        BIT26           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_COMPUTE_​THRM                    BIT25           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_PMC_​IROM_​PARITY                 BIT23           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_PMC_​SRAM_​UNC_​ERR                BIT22           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_OCWDT_​NOICC                     BIT19           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_ME_​UNC_​ERR                      BIT17           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_IOE_GRST_TRIGGER                BIT31           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_IOE_SOC_PMC_TYPE_8_GRST_TRIGGER BIT31           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_ESE_GBLRST_REQ                  BIT30           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_IOE_THRM                        BIT28           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_GFX_THRM                        BIT26           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_COMPUTE_THRM                    BIT25           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_PMC_IROM_PARITY                 BIT23           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_PMC_SRAM_UNC_ERR                BIT22           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_OCWDT_NOICC                     BIT19           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_ME_UNC_ERR                      BIT17           ///< 
 #define B_PMC_PWRM_GBLRST_CAUSE0_ISH                             BIT13           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_SYSPWR_​FLR                      BIT12           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_PCHPWR_​FLR                      BIT11           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_PMC_​FW                          BIT10           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_ME_​WDT                          BIT9            ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_PMC_​WDT                         BIT8            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_SYSPWR_FLR                      BIT12           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_PCHPWR_FLR                      BIT11           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_PMC_FW                          BIT10           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_ME_WDT                          BIT9            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_PMC_WDT                         BIT8            ///< 
 #define B_PMC_PWRM_GBLRST_CAUSE0_MEGBL                           BIT6            ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_SOCN_​THRM                       BIT5            ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_ME_​PBO                          BIT4            ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_SOCS_​THRM                       BIT3            ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_PMC_​UNC_​ERR                     BIT2            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_SOCN_THRM                       BIT5            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_ME_PBO                          BIT4            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_SOCS_THRM                       BIT3            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_PMC_UNC_ERR                     BIT2            ///< 
 #define B_PMC_PWRM_GBLRST_CAUSE0_PBO                             BIT1            ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_SECURE_​POLICY_​ERR               BIT0            ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE0_IOE_​SOC_​PMC_​TYPE_​7_​GRST_​TRIGGER BIT0            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_SECURE_POLICY_ERR               BIT0            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE0_IOE_SOC_PMC_TYPE_7_GRST_TRIGGER BIT0            ///< 
 
 #define R_PMC_PWRM_GBLRST_CAUSE1                                 0X1928          ///< Global Reset Causes 1
-#define B_PMC_PWRM_GBLRST_CAUSE1_SLP_​LVL_​RSP_​ERR                 BIT14           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE1_BSCAN_​MODE                      BIT13           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE1_LPM_​FW_​ERR                      BIT12           ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE1_ESPI_​TYPE8                      BIT9            ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE1_ESPI_​TYPE7                      BIT8            ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE1_PMC_​3STRIKE                     BIT4            ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE1_HOST_​RST_​PROM                   BIT2            ///< 
-#define B_PMC_PWRM_GBLRST_CAUSE1_HOST_​RESET_​TIMEOUT              BIT0            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE1_SLP_LVL_RSP_ERR                 BIT14           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE1_BSCAN_MODE                      BIT13           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE1_LPM_FW_ERR                      BIT12           ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE1_ESPI_TYPE8                      BIT9            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE1_ESPI_TYPE7                      BIT8            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE1_PMC_3STRIKE                     BIT4            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE1_HOST_RST_PROM                   BIT2            ///< 
+#define B_PMC_PWRM_GBLRST_CAUSE1_HOST_RESET_TIMEOUT              BIT0            ///< 
 
 #define R_PMC_PWRM_HPR_CAUSE0                                    0x192C          ///< Host Partition Reset Causes
-#define B_PMC_PWRM_HPR_CAUSE0_ESPI_​HRWPC                         BIT17           ///< 
-#define B_PMC_PWRM_HPR_CAUSE0_ESPI_​HRWOPC                        BIT16           ///< 
-#define B_PMC_PWRM_HPR_CAUSE0_HSMB_​HRPC                          BIT13           ///< 
-#define B_PMC_PWRM_HPR_CAUSE0_HSMB_​HR                            BIT12           ///< 
-#define B_PMC_PWRM_HPR_CAUSE0_MI_​HRPD                            BIT10           ///< 
-#define B_PMC_PWRM_HPR_CAUSE0_MI_​HRPC                            BIT9            ///< 
-#define B_PMC_PWRM_HPR_CAUSE0_MI_​HR                              BIT8            ///< 
-#define B_PMC_PWRM_HPR_CAUSE0_TCO_​WDT                            BIT6            ///< 
-#define B_PMC_PWRM_HPR_CAUSE0_SYSRST_​ES                          BIT2            ///< 
-#define B_PMC_PWRM_HPR_CAUSE0_CF9_​ES                             BIT1            ///< 
+#define B_PMC_PWRM_HPR_CAUSE0_ESPI_HRWPC                         BIT17           ///< 
+#define B_PMC_PWRM_HPR_CAUSE0_ESPI_HRWOPC                        BIT16           ///< 
+#define B_PMC_PWRM_HPR_CAUSE0_HSMB_HRPC                          BIT13           ///< 
+#define B_PMC_PWRM_HPR_CAUSE0_HSMB_HR                            BIT12           ///< 
+#define B_PMC_PWRM_HPR_CAUSE0_MI_HRPD                            BIT10           ///< 
+#define B_PMC_PWRM_HPR_CAUSE0_MI_HRPC                            BIT9            ///< 
+#define B_PMC_PWRM_HPR_CAUSE0_MI_HR                              BIT8            ///< 
+#define B_PMC_PWRM_HPR_CAUSE0_TCO_WDT                            BIT6            ///< 
+#define B_PMC_PWRM_HPR_CAUSE0_SYSRST_ES                          BIT2            ///< 
+#define B_PMC_PWRM_HPR_CAUSE0_CF9_ES                             BIT1            ///< 
 
 #endif

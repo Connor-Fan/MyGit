@@ -105,41 +105,41 @@ GlobalResetCauses0 (
   for (Index = 0; Index < 32; Index++) {
     if (Data & (1 << Index)) {
       switch (1 << Index) {
-        case B_PMC_PWRM_GBLRST_CAUSE0_IOE_​GRST_​TRIGGER:
-      //case B_PMC_PWRM_GBLRST_CAUSE0_IOE_​SOC_​PMC_​TYPE_​8_​GRST_​TRIGGER:
+        case B_PMC_PWRM_GBLRST_CAUSE0_IOE_GRST_TRIGGER:
+      //case B_PMC_PWRM_GBLRST_CAUSE0_IOE_SOC_PMC_TYPE_8_GRST_TRIGGER:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by an IOE global reset trigger.\n", Index);
 		  Print(L"Bit %d: If bit is set to 1, the last global reset was caused by an IOE PMC type 8 global reset trigger.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_ESE_​GBLRST_​REQ:
+        case B_PMC_PWRM_GBLRST_CAUSE0_ESE_GBLRST_REQ:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by a security global reset request.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_IOE_​THRM:
+        case B_PMC_PWRM_GBLRST_CAUSE0_IOE_THRM:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by IOE thermal.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_GFX_​THRM:
+        case B_PMC_PWRM_GBLRST_CAUSE0_GFX_THRM:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by graphics thermal.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_COMPUTE_​THRM:
+        case B_PMC_PWRM_GBLRST_CAUSE0_COMPUTE_THRM:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by compute tile thermal.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_PMC_​IROM_​PARITY:
+        case B_PMC_PWRM_GBLRST_CAUSE0_PMC_IROM_PARITY:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by PMC ROM parity.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_PMC_​SRAM_​UNC_​ERR:
+        case B_PMC_PWRM_GBLRST_CAUSE0_PMC_SRAM_UNC_ERR:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by PMC SRAM uncorrrectable errors.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_OCWDT_​NOICC:
+        case B_PMC_PWRM_GBLRST_CAUSE0_OCWDT_NOICC:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by over clocking watchdog timer expired.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_ME_​UNC_​ERR:
+        case B_PMC_PWRM_GBLRST_CAUSE0_ME_UNC_ERR:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused a CSME uncorrectable error.\n", Index);
           break;
 
@@ -147,43 +147,43 @@ GlobalResetCauses0 (
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by ISH.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_SYSPWR_​FLR:
-          Print(L"Bit %d: If bit is set to 1, the last global reset was caused by SYS_​PWROK going low in S0.\n", Index);
+        case B_PMC_PWRM_GBLRST_CAUSE0_SYSPWR_FLR:
+          Print(L"Bit %d: If bit is set to 1, the last global reset was caused by SYS_PWROK going low in S0.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_PCHPWR_​FLR:
-          Print(L"Bit %d: If bit is set to 1, the last global reset was caused by PLT_​PWROK going low in S0.\n", Index);
+        case B_PMC_PWRM_GBLRST_CAUSE0_PCHPWR_FLR:
+          Print(L"Bit %d: If bit is set to 1, the last global reset was caused by PLT_PWROK going low in S0.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_PMC_​FW:
+        case B_PMC_PWRM_GBLRST_CAUSE0_PMC_FW:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by PMC FW.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_ME_​WDT:
+        case B_PMC_PWRM_GBLRST_CAUSE0_ME_WDT:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by CSME watchdog timer expired.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_PMC_​WDT:
+        case B_PMC_PWRM_GBLRST_CAUSE0_PMC_WDT:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by PMC watchdog timer expired.\n", Index);
           break;
 
         case B_PMC_PWRM_GBLRST_CAUSE0_MEGBL:
-          Print(L"Bit %d: If bit is set to 1, the last global reset was caused by a CSME global reset (with details reflected in GBLRST_​CAUSE1 register).\n", Index);
+          Print(L"Bit %d: If bit is set to 1, the last global reset was caused by a CSME global reset (with details reflected in GBLRST_CAUSE1 register).\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_SOCN_​THRM:
+        case B_PMC_PWRM_GBLRST_CAUSE0_SOCN_THRM:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by the SoC north tile thermal.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_ME_​PBO:
+        case B_PMC_PWRM_GBLRST_CAUSE0_ME_PBO:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by CSME power button override.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_SOCS_​THRM:
+        case B_PMC_PWRM_GBLRST_CAUSE0_SOCS_THRM:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by the SoC South tile thermal.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_PMC_​UNC_​ERR:
+        case B_PMC_PWRM_GBLRST_CAUSE0_PMC_UNC_ERR:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by a PMC uncorrectable error.\n", Index);
           break;
 
@@ -191,8 +191,8 @@ GlobalResetCauses0 (
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by power button override.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE0_SECURE_​POLICY_​ERR:
-      //case B_PMC_PWRM_GBLRST_CAUSE0_IOE_​SOC_​PMC_​TYPE_​7_​GRST_​TRIGGER:
+        case B_PMC_PWRM_GBLRST_CAUSE0_SECURE_POLICY_ERR:
+      //case B_PMC_PWRM_GBLRST_CAUSE0_IOE_SOC_PMC_TYPE_7_GRST_TRIGGER:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by a security policy error.\n", Index);
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by an IOE PMC type 7 global reset trigger.\n", Index);
           break;
@@ -229,35 +229,35 @@ GlobalResetCauses1 (
   for (Index = 0; Index < 32; Index++) {
     if (Data & (1 << Index)) {
       switch (1 << Index) {
-        case B_PMC_PWRM_GBLRST_CAUSE1_SLP_​LVL_​RSP_​ERR:
+        case B_PMC_PWRM_GBLRST_CAUSE1_SLP_LVL_RSP_ERR:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by power management handshake response failure global reset.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE1_BSCAN_​MODE:
+        case B_PMC_PWRM_GBLRST_CAUSE1_BSCAN_MODE:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by BSCAN mode.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE1_LPM_​FW_​ERR:
+        case B_PMC_PWRM_GBLRST_CAUSE1_LPM_FW_ERR:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by low power mode exit failure.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE1_ESPI_​TYPE8:
+        case B_PMC_PWRM_GBLRST_CAUSE1_ESPI_TYPE8:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by eSPI type 8.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE1_ESPI_​TYPE7:
+        case B_PMC_PWRM_GBLRST_CAUSE1_ESPI_TYPE7:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by eSPI type 7.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE1_PMC_​3STRIKE:
+        case B_PMC_PWRM_GBLRST_CAUSE1_PMC_3STRIKE:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by PMC 3 strike.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE1_HOST_​RST_​PROM:
+        case B_PMC_PWRM_GBLRST_CAUSE1_HOST_RST_PROM:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by host reset promotion.\n", Index);
           break;
 
-        case B_PMC_PWRM_GBLRST_CAUSE1_HOST_​RESET_​TIMEOUT:
+        case B_PMC_PWRM_GBLRST_CAUSE1_HOST_RESET_TIMEOUT:
           Print(L"Bit %d: If bit is set to 1, the last global reset was caused by a host reset timeout.\n", Index);
           break;
 
@@ -293,43 +293,43 @@ HostPartitionResetCauses (
   for (Index = 0; Index < 32; Index++) {
     if (Data & (1 << Index)) {
       switch (1 << Index) {
-        case B_PMC_PWRM_HPR_CAUSE0_ESPI_​HRWPC:
+        case B_PMC_PWRM_HPR_CAUSE0_ESPI_HRWPC:
           Print(L"Bit %d: If bit is set to 1, the last host partition reset was caused by eSPI Host Reset With Power Cycle.\n", Index);
           break;
 
-        case B_PMC_PWRM_HPR_CAUSE0_ESPI_​HRWOPC:
+        case B_PMC_PWRM_HPR_CAUSE0_ESPI_HRWOPC:
           Print(L"Bit %d: If bit is set to 1, the last host partition reset was caused by eSPI Host Reset Without Power Cycle.\n", Index);
           break;
 
-        case B_PMC_PWRM_HPR_CAUSE0_HSMB_​HRPC:
+        case B_PMC_PWRM_HPR_CAUSE0_HSMB_HRPC:
           Print(L"Bit %d: If bit is set to 1, the last host partition reset was caused by Host SMBUS Host Reset With Power Cycle.\n", Index);
           break;
 
-        case B_PMC_PWRM_HPR_CAUSE0_HSMB_​HR:
+        case B_PMC_PWRM_HPR_CAUSE0_HSMB_HR:
           Print(L"Bit %d: If bit is set to 1, the last host partition reset was caused by Host SMBUS Host Reset Without Power Cycle.\n", Index);
           break;
 
-        case B_PMC_PWRM_HPR_CAUSE0_MI_​HRPD:
+        case B_PMC_PWRM_HPR_CAUSE0_MI_HRPD:
           Print(L"Bit %d: If bit is set to 1, the last host partition reset was caused by ME-Initiated Host Reset With Power Down.\n", Index);
           break;
 
-        case B_PMC_PWRM_HPR_CAUSE0_MI_​HRPC:
+        case B_PMC_PWRM_HPR_CAUSE0_MI_HRPC:
           Print(L"Bit %d: If bit is set to 1, the last host partition reset was caused by ME-Initiated Host Reset With Power Cycle.\n", Index);
           break;
 
-        case B_PMC_PWRM_HPR_CAUSE0_MI_​HR:
+        case B_PMC_PWRM_HPR_CAUSE0_MI_HR:
           Print(L"Bit %d: If bit is set to 1, the last host partition reset was caused by ME-Initiated Host Reset Without Power Cycle.\n", Index);
           break;
 
-        case B_PMC_PWRM_HPR_CAUSE0_TCO_​WDT:
+        case B_PMC_PWRM_HPR_CAUSE0_TCO_WDT:
           Print(L"Bit %d: If bit is set to 1, the last host partition reset was caused by Host TCO Watchdog Timer Second Expiration.\n", Index);
           break;
 
-        case B_PMC_PWRM_HPR_CAUSE0_SYSRST_​ES:
+        case B_PMC_PWRM_HPR_CAUSE0_SYSRST_ES:
           Print(L"Bit %d: If bit is set to 1, the last host partition reset was caused by Assertion of the SYS_RESET# pin after the 16 ms HW debounce.\n", Index);
           break;
 
-        case B_PMC_PWRM_HPR_CAUSE0_CF9_​ES:
+        case B_PMC_PWRM_HPR_CAUSE0_CF9_ES:
           Print(L"Bit %d: If bit is set to 1, the last host partition reset was caused by Write to CF9 (Host software writes value 6h or Eh to the CF9 register).\n", Index);
           break;
 
