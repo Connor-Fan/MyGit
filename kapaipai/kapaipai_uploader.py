@@ -47,7 +47,7 @@ CONSIGNOR_RE = re.compile(r"\u5bc4\u8ce3\s*[:\uff1a]\s*([A-Za-z0-9\u3400-\u9fff]
 PRICE_RE = re.compile(r"-?\d+(?:\.\d+)?")
 RESULT_RARITY_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$")
 PARENTHESIZED_RE = re.compile(r"[\uff08(]([^()\uff08\uff09]*)[)\uff09]")
-PROGRAM_VERSION = "2026.08.16-unified-8-search-retry"
+PROGRAM_VERSION = "2026.08.16-unified-10-category-state"
 LOGIN_SETTLE_MS = 5000
 SEARCH_UI_TIMEOUT_SECONDS = 30
 SEARCH_MAX_ATTEMPTS = 3
@@ -580,14 +580,19 @@ def wait_for_search_interface(page: Page, timeout_seconds: int = SEARCH_UI_TIMEO
     raise GameFilterError(f"The game filter did not load within {timeout_seconds} seconds after login.")
 
 
-def ensure_ygo_filter(page: Page, game_filter: str, max_attempts: int = 3) -> None:
+def ensure_ygo_filter(
+    page: Page,
+    game_filter: str,
+    max_attempts: int = 3,
+    force_reselect: bool = False,
+) -> None:
     wait_for_search_interface(page)
     last_error = ""
     for attempt in range(1, max_attempts + 1):
         close_update_dialog(page)
         custom_trigger, current_filter = custom_game_filter_trigger(page)
         dialog = visible_game_filter_dialog(page)
-        if current_filter == game_filter and dialog is None:
+        if current_filter == game_filter and dialog is None and not force_reselect:
             return
         try:
             used_custom_dialog = custom_trigger is not None or dialog is not None
@@ -626,6 +631,10 @@ def ensure_ygo_filter(page: Page, game_filter: str, max_attempts: int = 3) -> No
                         dismiss_game_filter_dialog(page)
                         open_dialog = visible_game_filter_dialog(page)
                     if open_dialog is None:
+                        page.wait_for_timeout(500)
+                        if current_game_filter(page) != game_filter:
+                            last_error = "The category changed again before the search could start."
+                            continue
                         print(f"Game category selected automatically: {game_filter}")
                         return
             selected_filter = current_game_filter(page) or "Unknown"
@@ -683,6 +692,28 @@ def kapaipai_result_code_pattern(card_code: str) -> re.Pattern[str]:
     )
 
 
+def deduplicate_search_results(
+    candidates: Iterable[SearchResultCandidate],
+) -> list[SearchResultCandidate]:
+    """Collapse duplicate DOM labels for the same visible card version."""
+    unique: dict[tuple[str, str, bool], SearchResultCandidate] = {}
+    for candidate in candidates:
+        key = (
+            normalize_for_match(candidate.code_text),
+            candidate.rarity.upper(),
+            candidate.is_alt_art,
+        )
+        unique.setdefault(key, candidate)
+    return list(unique.values())
+
+
+def looks_like_card_code(value: str) -> bool:
+    normalized = clean(value).upper()
+    if CARD_CODE_RE.search(normalized):
+        return True
+    return bool(re.fullmatch(r"[A-Z0-9]{2,12}(?:[\uff08(][^()\uff08\uff09]+[)\uff09])?-JP\d{3,4}", normalized))
+
+
 def search_result_candidates(page: Page, card_code: str) -> list[SearchResultCandidate]:
     code_pattern = kapaipai_result_code_pattern(card_code)
     code_nodes = page.get_by_text(code_pattern, exact=True)
@@ -697,7 +728,11 @@ def search_result_candidates(page: Page, card_code: str) -> list[SearchResultCan
             rarity = ""
             for text in row.locator("span").all_inner_texts():
                 candidate = clean(text).upper()
-                if candidate != code_text.upper() and RESULT_RARITY_RE.fullmatch(candidate):
+                if (
+                    candidate != code_text.upper()
+                    and not looks_like_card_code(candidate)
+                    and RESULT_RARITY_RE.fullmatch(candidate)
+                ):
                     rarity = candidate
                     break
             if rarity:
@@ -709,7 +744,7 @@ def search_result_candidates(page: Page, card_code: str) -> list[SearchResultCan
                 ))
         except PlaywrightTimeoutError:
             continue
-    return results
+    return deduplicate_search_results(results)
 
 
 def available_rarities(page: Page, card_code: str, is_alt_art: bool = False) -> list[str]:
@@ -736,6 +771,7 @@ def choose_rarity(item: Listing, choices: list[str]) -> str:
 
 
 def choose_search_result(item: Listing, candidates: list[SearchResultCandidate]) -> SearchResultCandidate:
+    candidates = deduplicate_search_results(candidates)
     matching_version = [result for result in candidates if result.is_alt_art == item.is_alt_art]
     version_name = "alternate-art version" if item.is_alt_art else "standard version"
     if not matching_version:
@@ -762,7 +798,7 @@ def search_and_open(page: Page, item: Listing, game_filter: str) -> str:
         candidates = []
         try:
             close_update_dialog(page)
-            ensure_ygo_filter(page, game_filter)
+            ensure_ygo_filter(page, game_filter, force_reselect=True)
             box = get_search_box(page)
             box.fill(item.card_code)
             search = visible(page.get_by_role("button", name=re.compile("\u641c\u5c0b")))
@@ -770,6 +806,7 @@ def search_and_open(page: Page, item: Listing, game_filter: str) -> str:
                 raise NeedsManualInput("The search button was not found.")
             search.click()
             deadline = time.monotonic() + 12
+            empty_result_streak = 0
             while time.monotonic() < deadline:
                 selected_filter = current_game_filter(page)
                 if selected_filter and selected_filter != game_filter:
@@ -780,7 +817,11 @@ def search_and_open(page: Page, item: Listing, game_filter: str) -> str:
                     break
                 body = page.locator("body").inner_text()
                 if "\u6c92\u6709\u76f8\u95dc\u7d50\u679c" in body and selected_filter == game_filter:
-                    raise CardNotFound(f"Kapaipai did not find {item.card_code}.")
+                    empty_result_streak += 1
+                    if empty_result_streak >= 4:
+                        raise CardNotFound(f"Kapaipai did not find {item.card_code}.")
+                else:
+                    empty_result_streak = 0
                 page.wait_for_timeout(250)
             if candidates and current_game_filter(page) == game_filter:
                 break
@@ -897,6 +938,11 @@ def quick_currency_value(scope: Locator) -> int | None:
                 return int(match.group().replace(",", ""))
         except (PlaywrightTimeoutError, ValueError):
             continue
+    try:
+        current, _, _ = currency_stepper(scope)
+        return current
+    except NeedsManualInput:
+        pass
     return None
 
 

@@ -20,14 +20,17 @@ from kapaipai_uploader import (
     control_number,
     create_default_listing,
     custom_game_filter_trigger,
+    deduplicate_search_results,
     detect_alt_art,
     ensure_ygo_filter,
     is_logged_in,
     kapaipai_result_code_pattern,
+    looks_like_card_code,
     load_config,
     open_full_edit,
     parenthesized_rarity_text,
     parse_listing,
+    quick_currency_value,
     read_listings,
     resolve_input,
     run_upload,
@@ -143,6 +146,27 @@ class ParserTests(unittest.TestCase):
         self.assertRegex("AGOV(1202)-JP002", pattern)
         self.assertRegex("AGOV\uff081202\uff09-JP002", pattern)
         self.assertNotRegex("AGOV(1202)-JP003", pattern)
+
+    def test_search_history_card_codes_are_not_rarity_labels(self):
+        self.assertTrue(looks_like_card_code("DAMA-JP008"))
+        self.assertTrue(looks_like_card_code("AGOV(1202)-JP002"))
+        self.assertFalse(looks_like_card_code("UR"))
+        self.assertFalse(looks_like_card_code("SER-SRV"))
+
+    def test_duplicate_dom_card_version_is_collapsed(self):
+        first_locator = object()
+        duplicate_locator = object()
+        candidates = [
+            SearchResultCandidate("CF01-JP026", "UR", False, first_locator),
+            SearchResultCandidate("CF01-JP026", "UR", False, duplicate_locator),
+        ]
+        unique = deduplicate_search_results(candidates)
+        self.assertEqual(len(unique), 1)
+        self.assertIs(unique[0].locator, first_locator)
+
+        item = Listing(415, "test", 1, 20, "CF01-JP026", "", "UR", "", "", "note")
+        selected = choose_search_result(item, candidates)
+        self.assertIs(selected.locator, first_locator)
 
     def test_screenshot_titles_and_invisible_characters(self):
         titles = [
@@ -461,6 +485,12 @@ class ParserTests(unittest.TestCase):
         self.assertGreaterEqual(state["trigger_clicks"], 3)
         self.assertEqual(state["selected"], "\u904a\u6232\u738b\u65e5\u6587")
 
+        previous_clicks = state["trigger_clicks"]
+        state["opened"] = False
+        ensure_ygo_filter(Page(), "\u904a\u6232\u738b\u65e5\u6587", force_reselect=True)
+        self.assertTrue(state["opened"])
+        self.assertGreater(state["trigger_clicks"], previous_clicks)
+
     def test_filter_verification_ignores_options_inside_open_dialog(self):
         candidates = [
             ("\u904a\u6232\u738b\u65e5\u6587", True),
@@ -686,6 +716,20 @@ class ParserTests(unittest.TestCase):
             self.assertIs(create_default_listing(page, 150, 1000), edit_button)
         set_price.assert_called_once_with(page, 150, 1000)
         add_button.click.assert_called_once_with(timeout=5000)
+
+    def test_zero_quick_price_can_be_read_from_stepper_text(self):
+        class EmptyFields:
+            @staticmethod
+            def count():
+                return 0
+
+        class Scope:
+            @staticmethod
+            def locator(_selector):
+                return EmptyFields()
+
+        with patch("kapaipai_uploader.currency_stepper", return_value=(0, object(), object())):
+            self.assertEqual(quick_currency_value(Scope()), 0)
 
     def test_unidentified_quick_price_does_not_block_add_product(self):
         page = object()

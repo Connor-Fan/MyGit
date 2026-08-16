@@ -38,6 +38,10 @@ Kapaipai may replace a button in the DOM immediately after a successful click. F
 
 Category selection and card search are verified together and retried up to three times. The result matcher accepts both normal card codes such as `AGOV-JP002` and Kapaipai catalog-qualified codes such as `AGOV(1202)-JP002`. Only three failed verification rounds stop the workflow.
 
+Duplicate DOM labels for the same visible card code, rarity, and artwork are collapsed before version selection. Zero quick-listing prices are detected from either an input value or the visible price stepper, so text-only `$0` controls are initialized before Add Product is clicked.
+
+Before every card search, the configured game category is actively reselected even when the label already appears correct. Search-history card codes are excluded from rarity detection, and an empty result must remain stable before it is accepted. This prevents delayed category resets from turning search-history chips into false card results.
+
 For Cases 2 and 3, paste or drag an Excel path into the prompt. Press Enter without a path to use the latest `ruten_products_*.xlsx` file in the package folder.
 
 ## Files
