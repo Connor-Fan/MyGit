@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from playwright.sync_api import Page, Response
 
 
-DEFAULT_STORE_URL = "https://www.ruten.com.tw/store/qzecrvyn/"
 DEFAULT_OUTPUT = f"ruten_products_{datetime.now():%Y%m%d}.xlsx"
 RUTEN_HOSTS = {"www.ruten.com.tw", "ruten.com.tw", "goods.ruten.com.tw"}
 
@@ -484,6 +483,7 @@ def fetch_one_quantity(
     product: Product,
     cookies: dict[str, str],
     user_agent: str,
+    store_url: str,
     delay: float,
 ) -> tuple[str, int | None, str | None]:
     import requests
@@ -495,7 +495,7 @@ def fetch_one_quantity(
             headers={
                 "User-Agent": user_agent,
                 "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.7",
-                "Referer": DEFAULT_STORE_URL,
+                "Referer": store_url,
             },
             cookies=cookies,
             timeout=30,
@@ -510,6 +510,7 @@ def fill_missing_quantities(
     products: list[Product],
     cookies: dict[str, str],
     user_agent: str,
+    store_url: str,
     workers: int,
     delay: float,
     limit: int,
@@ -529,7 +530,7 @@ def fill_missing_quantities(
     failures = 0
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [
-            executor.submit(fetch_one_quantity, product, cookies, user_agent, delay)
+            executor.submit(fetch_one_quantity, product, cookies, user_agent, store_url, delay)
             for product in missing
         ]
         for future in as_completed(futures):
@@ -634,13 +635,14 @@ def export_excel(products: list[Product], output: Path, store_url: str) -> None:
 
 
 def validate_store_url(url: str) -> str:
+    url = clean_text(url).strip('"')
     parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or parsed.hostname not in RUTEN_HOSTS:
+    if parsed.scheme not in {"http", "https"} or (parsed.hostname or "").lower() not in RUTEN_HOSTS:
         raise argparse.ArgumentTypeError("Only Ruten store URLs under ruten.com.tw are accepted.")
     if "/store/" not in parsed.path:
         raise argparse.ArgumentTypeError(
             "The URL must be a Ruten store URL, for example "
-            "https://www.ruten.com.tw/store/qzecrvyn/."
+            "https://www.ruten.com.tw/store/example_seller/."
         )
     return url
 
@@ -656,7 +658,7 @@ def store_list_url(store_url: str) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Export all public products from a Ruten store to Excel.")
-    parser.add_argument("--store-url", type=validate_store_url, default=DEFAULT_STORE_URL, help="Ruten store URL")
+    parser.add_argument("--store-url", type=validate_store_url, required=True, help="Ruten store URL")
     parser.add_argument("--output", type=Path, default=Path(DEFAULT_OUTPUT), help="Output .xlsx path")
     parser.add_argument("--show-browser", action="store_true", help="Show the browser for manual verification")
     parser.add_argument("--skip-detail-quantity", action="store_true", help="Skip per-product quantity lookups")
@@ -682,7 +684,7 @@ def main() -> int:
                 name="Demo Yu-Gi-Oh! card DBWS-JP023 (SR)",
                 quantity=1,
                 price=80,
-                url=DEFAULT_STORE_URL,
+                url=args.store_url,
                 item_id="demo",
                 sources={"DEMO"},
             )
@@ -702,7 +704,13 @@ def main() -> int:
             )
         if not args.skip_detail_quantity:
             fill_missing_quantities(
-                products, cookies, user_agent, args.detail_workers, args.delay, args.detail_limit
+                products,
+                cookies,
+                user_agent,
+                args.store_url,
+                args.detail_workers,
+                args.delay,
+                args.detail_limit,
             )
         if args.assume_quantity_one:
             for product in products:

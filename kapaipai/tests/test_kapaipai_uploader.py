@@ -11,12 +11,14 @@ from kapaipai_uploader import (
     CardNotFound,
     Listing,
     NeedsManualInput,
+    PlaywrightError,
     PlaywrightTimeoutError,
     SearchResultCandidate,
     adjust_stepper,
     build_note,
     choose_rarity,
     choose_search_result,
+    click_filter_target,
     control_number,
     create_default_listing,
     custom_game_filter_trigger,
@@ -24,6 +26,7 @@ from kapaipai_uploader import (
     detect_alt_art,
     ensure_ygo_filter,
     is_logged_in,
+    is_rarity_label,
     kapaipai_result_code_pattern,
     looks_like_card_code,
     load_config,
@@ -152,6 +155,21 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(looks_like_card_code("AGOV(1202)-JP002"))
         self.assertFalse(looks_like_card_code("UR"))
         self.assertFalse(looks_like_card_code("SER-SRV"))
+
+    def test_numeric_prefix_rarities_are_supported(self):
+        self.assertTrue(is_rarity_label("20SER"))
+        self.assertTrue(is_rarity_label("25SER"))
+        self.assertTrue(is_rarity_label("SER-SRV"))
+        self.assertFalse(is_rarity_label("06498706"))
+        self.assertFalse(is_rarity_label("DAMA-JP008"))
+
+        item = Listing(1112, "test", 3, 3000, "ETCO-JP071", "", "20SER", "", "", "note")
+        candidates = [
+            SearchResultCandidate("ETCO(1012)-JP071", "20SER", False, object()),
+            SearchResultCandidate("ETCO(1012)-JP071", "SER", False, object()),
+            SearchResultCandidate("ETCO(1012)-JP071", "SR", False, object()),
+        ]
+        self.assertEqual(choose_search_result(item, candidates).rarity, "20SER")
 
     def test_duplicate_dom_card_version_is_collapsed(self):
         first_locator = object()
@@ -490,6 +508,28 @@ class ParserTests(unittest.TestCase):
         ensure_ygo_filter(Page(), "\u904a\u6232\u738b\u65e5\u6587", force_reselect=True)
         self.assertTrue(state["opened"])
         self.assertGreater(state["trigger_clicks"], previous_clicks)
+
+    def test_filter_option_outside_viewport_uses_dom_click(self):
+        state = {"clicks": 0, "scrolled": 0, "dom_clicked": 0}
+
+        class Target:
+            @staticmethod
+            def click(**_kwargs):
+                state["clicks"] += 1
+                raise PlaywrightError("Element is outside of the viewport")
+
+            @staticmethod
+            def scroll_into_view_if_needed(**_kwargs):
+                state["scrolled"] += 1
+
+            @staticmethod
+            def evaluate(_script):
+                state["dom_clicked"] += 1
+
+        click_filter_target(Target())
+        self.assertEqual(state["clicks"], 2)
+        self.assertEqual(state["scrolled"], 1)
+        self.assertEqual(state["dom_clicked"], 1)
 
     def test_filter_verification_ignores_options_inside_open_dialog(self):
         candidates = [

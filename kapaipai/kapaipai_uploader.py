@@ -28,9 +28,10 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 try:
-    from playwright.sync_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
+    from playwright.sync_api import Error as PlaywrightError, Locator, Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
 except ModuleNotFoundError:  # Preview/parser mode can still explain how to install Playwright.
     Locator = Page = Any  # type: ignore[misc,assignment]
+    PlaywrightError = RuntimeError  # type: ignore[assignment]
     PlaywrightTimeoutError = TimeoutError  # type: ignore[assignment]
     sync_playwright = None  # type: ignore[assignment]
 
@@ -45,9 +46,9 @@ HEADER_ALIASES = {
 CARD_CODE_RE = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{2,12})[-\u2010\u2011\u2012\u2013\u2014](JP\d{3,4})(?![A-Z0-9])", re.I)
 CONSIGNOR_RE = re.compile(r"\u5bc4\u8ce3\s*[:\uff1a]\s*([A-Za-z0-9\u3400-\u9fff]+)", re.I)
 PRICE_RE = re.compile(r"-?\d+(?:\.\d+)?")
-RESULT_RARITY_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$")
+RESULT_RARITY_RE = re.compile(r"^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 PARENTHESIZED_RE = re.compile(r"[\uff08(]([^()\uff08\uff09]*)[)\uff09]")
-PROGRAM_VERSION = "2026.08.16-unified-10-category-state"
+PROGRAM_VERSION = "2026.08.17-unified-12-numeric-rarity"
 LOGIN_SETTLE_MS = 5000
 SEARCH_UI_TIMEOUT_SECONDS = 30
 SEARCH_MAX_ATTEMPTS = 3
@@ -563,8 +564,16 @@ def dismiss_game_filter_dialog(page: Page) -> None:
 def click_filter_target(target: Locator) -> None:
     try:
         target.click(timeout=3000)
-    except PlaywrightTimeoutError:
+        return
+    except PlaywrightError:
+        pass
+    try:
+        target.scroll_into_view_if_needed(timeout=2000)
         target.click(timeout=3000, force=True)
+        return
+    except PlaywrightError:
+        pass
+    target.evaluate("element => element.click()")
 
 
 def wait_for_search_interface(page: Page, timeout_seconds: int = SEARCH_UI_TIMEOUT_SECONDS) -> None:
@@ -641,6 +650,8 @@ def ensure_ygo_filter(
             last_error = f"The selected category is still '{selected_filter}'."
         except PlaywrightTimeoutError as error:
             last_error = str(error).splitlines()[0]
+        except PlaywrightError as error:
+            last_error = str(error).splitlines()[0]
         except GameFilterError as error:
             last_error = str(error)
         dismiss_game_filter_dialog(page)
@@ -714,6 +725,15 @@ def looks_like_card_code(value: str) -> bool:
     return bool(re.fullmatch(r"[A-Z0-9]{2,12}(?:[\uff08(][^()\uff08\uff09]+[)\uff09])?-JP\d{3,4}", normalized))
 
 
+def is_rarity_label(value: str) -> bool:
+    candidate = clean(value).upper()
+    return bool(
+        candidate
+        and not looks_like_card_code(candidate)
+        and RESULT_RARITY_RE.fullmatch(candidate)
+    )
+
+
 def search_result_candidates(page: Page, card_code: str) -> list[SearchResultCandidate]:
     code_pattern = kapaipai_result_code_pattern(card_code)
     code_nodes = page.get_by_text(code_pattern, exact=True)
@@ -728,11 +748,7 @@ def search_result_candidates(page: Page, card_code: str) -> list[SearchResultCan
             rarity = ""
             for text in row.locator("span").all_inner_texts():
                 candidate = clean(text).upper()
-                if (
-                    candidate != code_text.upper()
-                    and not looks_like_card_code(candidate)
-                    and RESULT_RARITY_RE.fullmatch(candidate)
-                ):
+                if candidate != code_text.upper() and is_rarity_label(candidate):
                     rarity = candidate
                     break
             if rarity:

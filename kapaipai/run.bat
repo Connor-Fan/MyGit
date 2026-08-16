@@ -27,7 +27,17 @@ goto menu
 cls
 echo [Case 1] Export Ruten store products to Excel
 echo.
-call :run_python "ruten_exporter.py"
+set "STORE_URL="
+set /p "STORE_URL=Enter or paste the Ruten store URL: "
+set "STORE_URL=%STORE_URL:"=%"
+if not defined STORE_URL (
+    echo.
+    echo A Ruten store URL is required.
+    echo.
+    pause
+    goto menu
+)
+call :run_python "ruten_exporter.py" --store-url "%STORE_URL%"
 set "RUN_RESULT=%ERRORLEVEL%"
 call :show_result "Ruten export"
 goto menu

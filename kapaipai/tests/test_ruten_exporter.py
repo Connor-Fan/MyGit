@@ -6,13 +6,18 @@ from openpyxl import load_workbook
 
 from ruten_exporter import (
     Product,
+    build_parser,
     detail_quantity_from_html,
     export_excel,
     parse_price,
     parse_quantity,
     products_from_json,
     store_list_url,
+    validate_store_url,
 )
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class ParserTests(unittest.TestCase):
@@ -44,6 +49,18 @@ class ParserTests(unittest.TestCase):
             store_list_url("https://www.ruten.com.tw/store/qzecrvyn/"),
             "https://www.ruten.com.tw/store/qzecrvyn/list",
         )
+
+    def test_store_url_is_required_and_validated(self):
+        url = "https://www.ruten.com.tw/store/example_seller/"
+        args = build_parser().parse_args(["--store-url", url, "--demo"])
+        self.assertEqual(args.store_url, url)
+        self.assertEqual(validate_store_url(f'"{url}"'), url)
+
+    def test_run_batch_prompts_for_store_url(self):
+        batch = (ROOT / "run.bat").read_text(encoding="utf-8")
+        self.assertIn("Enter or paste the Ruten store URL", batch)
+        self.assertIn('--store-url "%STORE_URL%"', batch)
+        self.assertNotIn('call :run_python "ruten_exporter.py"\n', batch)
 
 
 class ExcelTests(unittest.TestCase):

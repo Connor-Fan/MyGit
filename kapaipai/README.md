@@ -16,7 +16,7 @@ This package combines the Ruten exporter, Kapaipai preview generator, and Kapaip
 
 ## Menu
 
-- Case 1 exports all public products from the configured Ruten store to `ruten_products_YYYYMMDD.xlsx`.
+- Case 1 asks for a Ruten store URL, then exports all public products from that store to `ruten_products_YYYYMMDD.xlsx`.
 - Case 2 reads a Ruten workbook and creates `*_kapaipai_preview.xlsx`.
 - Case 3 reads a Ruten workbook and starts the automatic Kapaipai upload workflow.
 
@@ -42,7 +42,13 @@ Duplicate DOM labels for the same visible card code, rarity, and artwork are col
 
 Before every card search, the configured game category is actively reselected even when the label already appears correct. Search-history card codes are excluded from rarity detection, and an empty result must remain stable before it is accepted. This prevents delayed category resets from turning search-history chips into false card results.
 
+Game-filter options rendered by a virtualized dropdown use layered click recovery: normal click, scroll plus forced click, then a DOM click. The selected category is still verified afterward, so an off-screen option no longer stops the workflow as an unexpected error.
+
+Search-result rarity labels may begin with digits, including `20SER` and `25SER`. Numeric product identifiers and card codes remain excluded, so they cannot be mistaken for rarities.
+
 For Cases 2 and 3, paste or drag an Excel path into the prompt. Press Enter without a path to use the latest `ruten_products_*.xlsx` file in the package folder.
+
+For Case 1, paste the complete Ruten store URL when prompted, for example `https://www.ruten.com.tw/store/example_seller/`. The exporter does not contain a default seller URL. When running the Python file directly, `--store-url` is required.
 
 ## Files
 
