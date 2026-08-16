@@ -23,6 +23,7 @@ from kapaipai_uploader import (
     detect_alt_art,
     ensure_ygo_filter,
     is_logged_in,
+    kapaipai_result_code_pattern,
     load_config,
     open_full_edit,
     parenthesized_rarity_text,
@@ -31,9 +32,11 @@ from kapaipai_uploader import (
     resolve_input,
     run_upload,
     save_full_edit,
+    set_price,
     set_full_edit_number,
     stepper_button,
     submit_listing,
+    wait_for_listing_action,
     wait_for_search_interface,
     wait_for_listing_controls,
     write_preview,
@@ -87,6 +90,7 @@ class ParserTests(unittest.TestCase):
             "\u96b1\u666e": "NR",
             "\u91d1\u947d": "QCSER",
             "\u96d5\u947d": "CR",
+            "\u7d05\u5b57\u534a\u947d": "SER-SRV",
             "\u7d05\u4eae": "UR",
             "\u85cd\u4eae": "UR",
         }
@@ -131,6 +135,14 @@ class ParserTests(unittest.TestCase):
             original.touch()
             preview.touch()
             self.assertEqual(resolve_input(str(preview)), original.resolve())
+
+    def test_kapaipai_catalog_qualified_card_code(self):
+        pattern = kapaipai_result_code_pattern("AGOV-JP002")
+        self.assertRegex("AGOV-JP002", pattern)
+        self.assertRegex("AGOV-002", pattern)
+        self.assertRegex("AGOV(1202)-JP002", pattern)
+        self.assertRegex("AGOV\uff081202\uff09-JP002", pattern)
+        self.assertNotRegex("AGOV(1202)-JP003", pattern)
 
     def test_screenshot_titles_and_invisible_characters(self):
         titles = [
@@ -291,6 +303,19 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(state["value"], 150)
         adjust_stepper(Page(), 5, reader, 1000, "\u50f9\u683c")
         self.assertEqual(state["value"], 5)
+
+    def test_price_uses_direct_currency_input_before_stepper(self):
+        page = object()
+        panel = object()
+        with (
+            patch("kapaipai_uploader.quick_panel", return_value=panel),
+            patch("kapaipai_uploader.fill_labelled_number", return_value=False),
+            patch("kapaipai_uploader.fill_quick_currency_input", return_value=True) as direct_fill,
+            patch("kapaipai_uploader.adjust_stepper") as adjust,
+        ):
+            set_price(page, 150, 1000)
+        direct_fill.assert_called_once_with(page, panel, 150)
+        adjust.assert_not_called()
 
     def test_control_number_can_read_input_value(self):
         class Field:
@@ -585,7 +610,10 @@ class ParserTests(unittest.TestCase):
         item = Listing(2, "test", 3, 150, "TEST-JP001", "", "NPR", "", "", "note")
 
         with (
-            patch("kapaipai_uploader.create_default_listing", side_effect=lambda _page: order.append("create") or edit_button),
+            patch(
+                "kapaipai_uploader.create_default_listing",
+                side_effect=lambda _page, _price, _max_clicks: order.append("create") or edit_button,
+            ),
             patch("kapaipai_uploader.open_full_edit", side_effect=lambda _page, _button: order.append("open_edit") or panel),
             patch("kapaipai_uploader.set_full_edit_number", side_effect=lambda _page, _panel, label, _value: order.append(label)),
             patch("kapaipai_uploader.set_full_edit_note", side_effect=lambda _page, _panel, _note: order.append("note")),
@@ -603,12 +631,31 @@ class ParserTests(unittest.TestCase):
         page = object()
         edit_button = object()
         with (
-            patch("kapaipai_uploader.find_text_button", return_value=edit_button) as finder,
+            patch("kapaipai_uploader.wait_for_listing_action", return_value=("edit", edit_button)),
             patch("kapaipai_uploader.quick_panel") as panel,
         ):
             self.assertIs(create_default_listing(page), edit_button)
-        finder.assert_called_once_with(page, "\u5b8c\u6574\u7de8\u8f2f")
         panel.assert_not_called()
+
+    def test_listing_action_waits_for_delayed_full_edit(self):
+        state = {"ticks": 0}
+        page = Mock()
+        page.wait_for_timeout.side_effect = lambda _milliseconds: state.__setitem__("ticks", state["ticks"] + 1)
+        edit_button = object()
+
+        def find(_scope, label):
+            if label == "\u5b8c\u6574\u7de8\u8f2f" and state["ticks"] >= 2:
+                return edit_button
+            return None
+
+        with (
+            patch("kapaipai_uploader.find_text_button", side_effect=find),
+            patch("kapaipai_uploader.quick_panel", return_value=object()),
+        ):
+            action, button = wait_for_listing_action(page, timeout_seconds=1)
+        self.assertEqual(action, "edit")
+        self.assertIs(button, edit_button)
+        self.assertGreaterEqual(state["ticks"], 2)
 
     def test_new_listing_clicks_add_product_then_waits_for_full_edit(self):
         page = object()
@@ -617,12 +664,44 @@ class ParserTests(unittest.TestCase):
         edit_button = object()
         with (
             patch("kapaipai_uploader.quick_panel", return_value=quick_scope),
-            patch("kapaipai_uploader.find_text_button", side_effect=[None, add_button]),
+            patch("kapaipai_uploader.wait_for_listing_action", return_value=("add", add_button)),
             patch("kapaipai_uploader.wait_for_text_button", return_value=edit_button) as waiter,
         ):
             self.assertIs(create_default_listing(page), edit_button)
         add_button.click.assert_called_once_with(timeout=5000)
         waiter.assert_called_once_with(page, "\u5b8c\u6574\u7de8\u8f2f")
+
+    def test_zero_quick_price_is_initialized_before_add_product(self):
+        page = object()
+        quick_scope = object()
+        add_button = Mock()
+        edit_button = object()
+        with (
+            patch("kapaipai_uploader.quick_panel", return_value=quick_scope),
+            patch("kapaipai_uploader.quick_currency_value", return_value=0),
+            patch("kapaipai_uploader.set_price") as set_price,
+            patch("kapaipai_uploader.wait_for_listing_action", return_value=("add", add_button)),
+            patch("kapaipai_uploader.wait_for_text_button", return_value=edit_button),
+        ):
+            self.assertIs(create_default_listing(page, 150, 1000), edit_button)
+        set_price.assert_called_once_with(page, 150, 1000)
+        add_button.click.assert_called_once_with(timeout=5000)
+
+    def test_unidentified_quick_price_does_not_block_add_product(self):
+        page = object()
+        quick_scope = object()
+        add_button = Mock()
+        edit_button = object()
+        with (
+            patch("kapaipai_uploader.quick_panel", return_value=quick_scope),
+            patch("kapaipai_uploader.quick_currency_value", return_value=None),
+            patch("kapaipai_uploader.set_price") as set_price,
+            patch("kapaipai_uploader.wait_for_listing_action", return_value=("add", add_button)),
+            patch("kapaipai_uploader.wait_for_text_button", return_value=edit_button),
+        ):
+            self.assertIs(create_default_listing(page, 5, 1000), edit_button)
+        set_price.assert_not_called()
+        add_button.click.assert_called_once_with(timeout=5000)
 
     def test_add_product_timeout_is_accepted_when_full_edit_appears(self):
         page = object()
@@ -632,7 +711,7 @@ class ParserTests(unittest.TestCase):
         edit_button = object()
         with (
             patch("kapaipai_uploader.quick_panel", return_value=quick_scope),
-            patch("kapaipai_uploader.find_text_button", side_effect=[None, add_button]),
+            patch("kapaipai_uploader.wait_for_listing_action", return_value=("add", add_button)),
             patch("kapaipai_uploader.wait_for_text_button", return_value=edit_button),
         ):
             self.assertIs(create_default_listing(page), edit_button)

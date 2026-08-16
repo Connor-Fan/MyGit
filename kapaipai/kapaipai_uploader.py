@@ -47,9 +47,10 @@ CONSIGNOR_RE = re.compile(r"\u5bc4\u8ce3\s*[:\uff1a]\s*([A-Za-z0-9\u3400-\u9fff]
 PRICE_RE = re.compile(r"-?\d+(?:\.\d+)?")
 RESULT_RARITY_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$")
 PARENTHESIZED_RE = re.compile(r"[\uff08(]([^()\uff08\uff09]*)[)\uff09]")
-PROGRAM_VERSION = "2026.08.16-unified-4-dom-rerender"
+PROGRAM_VERSION = "2026.08.16-unified-8-search-retry"
 LOGIN_SETTLE_MS = 5000
 SEARCH_UI_TIMEOUT_SECONDS = 30
+SEARCH_MAX_ATTEMPTS = 3
 GAME_FILTER_NAMES = {
     "\u5168\u90e8\u904a\u6232", "\u5bf6\u53ef\u5922\u65e5\u6587", "\u5bf6\u53ef\u5922\u7e41\u4e2d", "\u5bf6\u53ef\u5922\u82f1\u6587", "\u5bf6\u53ef\u5922\u7c21\u4e2d",
     "\u822a\u6d77\u738b\u65e5\u6587", "\u904a\u6232\u738b\u65e5\u6587", "UA\u65e5\u6587", "\u92fc\u5f48\u65e5\u6587", "VG\u65e5\u6587",
@@ -661,9 +662,29 @@ def kapaipai_code_variants(card_code: str) -> list[str]:
     return variants
 
 
+def kapaipai_result_code_pattern(card_code: str) -> re.Pattern[str]:
+    """Match normal and catalog-qualified Kapaipai display codes.
+
+    Kapaipai sometimes inserts a catalog number between the set code and the
+    card number, for example AGOV(1202)-JP002 for source code AGOV-JP002.
+    """
+    canonical = clean(card_code).upper()
+    match = re.fullmatch(r"(.+)-JP(\d{3,4})", canonical)
+    if not match:
+        alternatives = "|".join(re.escape(value) for value in kapaipai_code_variants(canonical))
+        return re.compile(rf"^(?:{alternatives})\s*(?:[\uff08(]\u7570\u5716[)\uff09])?$", re.I)
+    set_code, number = match.groups()
+    set_pattern = re.escape(set_code)
+    catalog_qualifier = r"(?:[\uff08(][^()\uff08\uff09]+[)\uff09])?"
+    return re.compile(
+        rf"^{set_pattern}{catalog_qualifier}-(?:JP)?{re.escape(number)}"
+        rf"\s*(?:[\uff08(]\u7570\u5716[)\uff09])?$",
+        re.I,
+    )
+
+
 def search_result_candidates(page: Page, card_code: str) -> list[SearchResultCandidate]:
-    alternatives = "|".join(re.escape(value) for value in kapaipai_code_variants(card_code))
-    code_pattern = re.compile(rf"^(?:{alternatives})\s*(?:[\uff08(]\u7570\u5716[)\uff09])?$", re.I)
+    code_pattern = kapaipai_result_code_pattern(card_code)
     code_nodes = page.get_by_text(code_pattern, exact=True)
     results: list[SearchResultCandidate] = []
     for index in range(code_nodes.count()):
@@ -736,42 +757,52 @@ def search_and_open(page: Page, item: Listing, game_filter: str) -> str:
     if page.url != SEARCH_URL:
         page.goto(SEARCH_URL, wait_until="domcontentloaded")
     candidates: list[SearchResultCandidate] = []
-    for search_attempt in range(1, 4):
-        close_update_dialog(page)
-        ensure_ygo_filter(page, game_filter)
-        box = get_search_box(page)
-        box.fill(item.card_code)
-        search = visible(page.get_by_role("button", name=re.compile("\u641c\u5c0b")))
-        if search is None:
-            raise NeedsManualInput("The search button was not found.")
-        search.click()
-        deadline = time.monotonic() + 12
-        filter_reset = False
-        while time.monotonic() < deadline:
-            selected_filter = current_game_filter(page)
-            if selected_filter and selected_filter != game_filter:
-                print(
-                    f"The category changed to '{selected_filter}' after searching. "
-                    f"Selecting the configured category again ({search_attempt}/3)..."
-                )
-                filter_reset = True
-                break
-            candidates = search_result_candidates(page, item.card_code)
-            if candidates and selected_filter == game_filter:
-                break
-            body = page.locator("body").inner_text()
-            if "\u6c92\u6709\u76f8\u95dc\u7d50\u679c" in body and selected_filter == game_filter:
-                raise CardNotFound(f"Kapaipai did not find {item.card_code}.")
-            page.wait_for_timeout(250)
-        if filter_reset:
+    last_error = "The search result did not become ready."
+    for search_attempt in range(1, SEARCH_MAX_ATTEMPTS + 1):
+        candidates = []
+        try:
+            close_update_dialog(page)
             ensure_ygo_filter(page, game_filter)
-            continue
-        if candidates:
-            break
+            box = get_search_box(page)
+            box.fill(item.card_code)
+            search = visible(page.get_by_role("button", name=re.compile("\u641c\u5c0b")))
+            if search is None:
+                raise NeedsManualInput("The search button was not found.")
+            search.click()
+            deadline = time.monotonic() + 12
+            while time.monotonic() < deadline:
+                selected_filter = current_game_filter(page)
+                if selected_filter and selected_filter != game_filter:
+                    last_error = f"The category changed to '{selected_filter}' after searching."
+                    break
+                candidates = search_result_candidates(page, item.card_code)
+                if candidates and selected_filter == game_filter:
+                    break
+                body = page.locator("body").inner_text()
+                if "\u6c92\u6709\u76f8\u95dc\u7d50\u679c" in body and selected_filter == game_filter:
+                    raise CardNotFound(f"Kapaipai did not find {item.card_code}.")
+                page.wait_for_timeout(250)
+            if candidates and current_game_filter(page) == game_filter:
+                break
+            if not candidates and current_game_filter(page) == game_filter:
+                last_error = (
+                    f"No selectable result for {item.card_code} was detected before the timeout."
+                )
+        except CardNotFound:
+            raise
+        except (GameFilterError, NeedsManualInput, PlaywrightTimeoutError) as error:
+            last_error = str(error).splitlines()[0]
+        if search_attempt < SEARCH_MAX_ATTEMPTS:
+            print(
+                f"Search attempt {search_attempt}/{SEARCH_MAX_ATTEMPTS} failed: {last_error} "
+                "Retrying the category and search..."
+            )
+            dismiss_game_filter_dialog(page)
+            page.wait_for_timeout(700)
     if not candidates:
         raise GameFilterError(
-            f"The game category repeatedly reset while searching for {item.card_code}; "
-            "three automatic attempts failed."
+            f"The category and search could not be verified for {item.card_code} after "
+            f"{SEARCH_MAX_ATTEMPTS} attempts: {last_error}"
         )
     selected = choose_search_result(item, candidates)
     rarity = selected.rarity
@@ -826,6 +857,47 @@ def fill_labelled_number(scope: Any, labels: Iterable[str], value: int) -> bool:
             field.fill(str(value))
             return True
     return False
+
+
+def fill_quick_currency_input(page: Page, scope: Locator, value: int) -> bool:
+    fields = scope.locator("input[inputmode='decimal'], input")
+    for index in range(fields.count()):
+        field = fields.nth(index)
+        try:
+            if not field.is_visible():
+                continue
+            raw = clean(field.input_value())
+            if "$" not in raw:
+                continue
+            field.click()
+            field.fill(str(value))
+            field.press("Tab")
+            page.wait_for_timeout(300)
+            updated = clean(field.input_value())
+            match = re.search(r"\d[\d,]*", updated)
+            if match and int(match.group().replace(",", "")) == value:
+                return True
+        except (PlaywrightTimeoutError, ValueError):
+            continue
+    return False
+
+
+def quick_currency_value(scope: Locator) -> int | None:
+    fields = scope.locator("input[inputmode='decimal'], input")
+    for index in range(fields.count()):
+        field = fields.nth(index)
+        try:
+            if not field.is_visible():
+                continue
+            raw = clean(field.input_value())
+            if "$" not in raw:
+                continue
+            match = re.search(r"\d[\d,]*", raw)
+            if match:
+                return int(match.group().replace(",", ""))
+        except (PlaywrightTimeoutError, ValueError):
+            continue
+    return None
 
 
 def stepper_button(container: Locator, direction: int) -> Locator | None:
@@ -1025,6 +1097,8 @@ def set_price(page: Page, price: int, max_clicks: int) -> None:
                 return
         except NeedsManualInput:
             return
+    if fill_quick_currency_input(page, panel, price):
+        return
     adjust_stepper(page, price, lambda: currency_stepper(quick_panel(page)), max_clicks, "price")
     actual, _, _ = currency_stepper(quick_panel(page))
     if actual != price:
@@ -1086,19 +1160,55 @@ def wait_for_text_button(page: Page, label: str, timeout_seconds: int = 15) -> L
     raise NeedsManualInput(f"The '{label}' control did not appear within {timeout_seconds} seconds.")
 
 
-def create_default_listing(page: Page) -> Locator:
+def wait_for_listing_action(page: Page, timeout_seconds: int = 15) -> tuple[str, Locator]:
     edit_label = "\u5b8c\u6574\u7de8\u8f2f"
-    edit_button = find_text_button(page, edit_label)
-    if edit_button is not None:
-        print("An existing listing was detected. Reusing its full-edit action.")
-        return edit_button
-
     add_label = "\u65b0\u589e\u5546\u54c1"
-    add_button = find_text_button(quick_panel(page), add_label)
-    if add_button is None:
-        add_button = find_text_button(page, add_label)
-    if add_button is None:
-        raise NeedsManualInput("The add-product control was not found.")
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        edit_button = find_text_button(page, edit_label)
+        if edit_button is not None:
+            return "edit", edit_button
+        add_button = find_text_button(quick_panel(page), add_label)
+        if add_button is None:
+            add_button = find_text_button(page, add_label)
+        if add_button is not None:
+            return "add", add_button
+        page.wait_for_timeout(250)
+    raise NeedsManualInput(
+        "Neither the full-edit control nor the add-product control appeared "
+        f"within {timeout_seconds} seconds."
+    )
+
+
+def create_default_listing(
+    page: Page,
+    target_price: int | None = None,
+    max_clicks: int = 1000,
+) -> Locator:
+    edit_label = "\u5b8c\u6574\u7de8\u8f2f"
+    action, action_button = wait_for_listing_action(page)
+    if action == "edit":
+        print("An existing listing was detected. Reusing its full-edit action.")
+        return action_button
+
+    if target_price is not None:
+        initial_price = quick_currency_value(quick_panel(page))
+        if initial_price is None:
+            print("The quick-listing price could not be identified. Leaving it unchanged.")
+        elif initial_price <= 0:
+            if target_price <= 0:
+                raise NeedsManualInput("The product cannot be created with a zero price.")
+            print(
+                f"The quick-listing price is {initial_price}. "
+                f"Setting it to {target_price} before product creation."
+            )
+            set_price(page, target_price, max_clicks)
+            action, action_button = wait_for_listing_action(page)
+            if action == "edit":
+                print("An existing listing appeared after the price update. Reusing its full-edit action.")
+                return action_button
+
+    add_button = action_button
 
     click_error: PlaywrightTimeoutError | None = None
     try:
@@ -1279,8 +1389,7 @@ def save_full_edit(page: Page, panel: Locator, timeout_seconds: int = 15) -> Non
 
 
 def submit_listing(page: Page, item: Listing, max_clicks: int) -> None:
-    del max_clicks  # Full edit uses direct input fields instead of quick-listing steppers.
-    edit_button = create_default_listing(page)
+    edit_button = create_default_listing(page, item.price, max_clicks)
     panel = open_full_edit(page, edit_button)
     set_full_edit_number(page, panel, "\u5546\u54c1\u50f9\u683c", item.price)
     set_full_edit_number(page, panel, "\u5728\u552e\u6578\u91cf", item.quantity)

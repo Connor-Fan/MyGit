@@ -30,7 +30,13 @@ Case 3 uses the following listing sequence:
 
 If an existing listing is detected, the workflow reuses its full-edit action instead of creating a duplicate. A card that is not found is recorded and skipped. Any error after a card is found, including product creation, full edit, field entry, or saving, stops the entire upload immediately, writes diagnostic files, returns an error code, and leaves the batch window paused.
 
+After a card page opens, the workflow waits for either Full Edit or Add Product. This handles the short reload period after consecutive rows reference the same card: a delayed existing listing is reused instead of being misreported as a missing add-product control.
+
+Some cards have a zero quick-listing price when Kapaipai has no market price. Because Kapaipai silently ignores Add Product at zero price, the workflow initializes only a confirmed `$0` price with the Excel target price before creating the product. If the quick price cannot be identified, it is left unchanged and product creation continues. The full-edit panel still performs and verifies the final Product Price, Listed Quantity, and Product Note update.
+
 Kapaipai may replace a button in the DOM immediately after a successful click. For Add Product, Full Edit, and Save Changes, the workflow verifies the expected resulting UI state before deciding whether the action failed. This prevents a successful action from being reported as a timeout while preserving the immediate stop behavior for unverified upload errors.
+
+Category selection and card search are verified together and retried up to three times. The result matcher accepts both normal card codes such as `AGOV-JP002` and Kapaipai catalog-qualified codes such as `AGOV(1202)-JP002`. Only three failed verification rounds stop the workflow.
 
 For Cases 2 and 3, paste or drag an Excel path into the prompt. Press Enter without a path to use the latest `ruten_products_*.xlsx` file in the package folder.
 
