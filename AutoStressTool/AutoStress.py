@@ -14,9 +14,9 @@ from pywinauto import Application
 # Globals section: define global variables here
 
 # Tool version
-tool_version = "2.8.0"
+tool_version = "2.8.1"
 # Python compiler version
-python_version = "3.8.10"
+python_version = "3.14.7"
 # Get a directory of your current test path
 test_path = os.getcwd()
 # Get a directory of your user path
@@ -834,13 +834,22 @@ def setup(curr_dict):
         runtime.info_msg(f'Setting the monitor timeout to 0 in AC mode was successful!')
 
     # config memory dump settings in Startup and Recovery 
-    rc, _, std_err = dash.runcmd('wmic recoveros set AutoReboot = False')
+    rc, _, std_err = dash.runcmd(
+        'powershell.exe -Command "Set-ItemProperty -Path '
+        '"HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CrashControl" '
+        '-Name "AutoReboot" -Value 0"'
+    )
     if rc == 1 and std_err is not None:
         runtime.warning_msg(f'Can not set Automatically Restart to be False! Error: {std_err}')
     else:
         runtime.info_msg(f'Setting Automatically Restart to be False was successful!')
 
-    rc, _, std_err = dash.runcmd('wmic recoveros set DebugInfoType = 1')
+    rc, _, std_err = dash.runcmd(
+        'powershell.exe -Command "'
+        'Set-ItemProperty -Path '
+        '"HKLM:\\SYSTEM\\CurrentControlSet\\Control\\CrashControl" '
+        '-Name "CrashDumpEnabled" -Value 1"'
+    )
     if rc == 1 and std_err is not None:
         runtime.warning_msg(f'Can not set the memory dump to be complete! Error: {std_err}')
     else:

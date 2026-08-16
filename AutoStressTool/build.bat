@@ -4,7 +4,7 @@
 @rem ########################################
 
 set SIGNTOOL_DIR=DigitalSignature
-set AutoStress_DIR=C:\BIOS\MyGit\AutoStressTool
+set AutoStress_DIR=%~dp0
 set DIST_DIR=dist
 
 @set "params=%*"

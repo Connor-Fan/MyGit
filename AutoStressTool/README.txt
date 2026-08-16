@@ -1,5 +1,5 @@
 ===========================================================================
-Tool version 2.8.0, Python package 3.8.10
+Tool version 2.8.1, Python package 3.14.7
 This is README.txt, the class material's top-level user guide
 Author: Kanan Fan, https://www.youtube.com/channel/UCoSrY_IQQVpmIRZ9Xf-y93g
 ===========================================================================
