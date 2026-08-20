@@ -5,15 +5,18 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from ruten_exporter import (
+    DEFAULT_PAGE_DELAY,
     Product,
     build_parser,
     detail_quantity_from_html,
     export_excel,
     parse_price,
     parse_quantity,
+    page_state_changed,
     products_from_json,
     store_list_url,
     validate_store_url,
+    wait_for_page_change,
 )
 
 
@@ -55,6 +58,50 @@ class ParserTests(unittest.TestCase):
         args = build_parser().parse_args(["--store-url", url, "--demo"])
         self.assertEqual(args.store_url, url)
         self.assertEqual(validate_store_url(f'"{url}"'), url)
+
+    def test_page_delay_defaults_to_three_seconds(self):
+        args = build_parser().parse_args([
+            "--store-url", "https://www.ruten.com.tw/store/example_seller/", "--demo"
+        ])
+        self.assertEqual(args.page_delay, DEFAULT_PAGE_DELAY)
+        self.assertEqual(args.page_delay, 3.0)
+
+    def test_page_state_requires_changed_displayed_products(self):
+        before = {
+            "url": "https://www.ruten.com.tw/store/example_seller/list",
+            "page_number": "13",
+            "item_ids": ("A", "B"),
+        }
+        unchanged = dict(before)
+        changed = dict(before, page_number="14", item_ids=("C", "D"))
+        self.assertFalse(page_state_changed(before, unchanged))
+        self.assertTrue(page_state_changed(before, changed))
+
+    def test_wait_for_page_change_polls_until_item_ids_change(self):
+        class FakePage:
+            url = "https://www.ruten.com.tw/store/example_seller/list"
+
+            def __init__(self):
+                self.states = [
+                    {"pageNumber": "13", "itemIds": ["A", "B"]},
+                    {"pageNumber": "14", "itemIds": ["C", "D"]},
+                ]
+
+            def evaluate(self, _script):
+                return self.states.pop(0)
+
+            def wait_for_timeout(self, _milliseconds):
+                return None
+
+        before = {
+            "url": FakePage.url,
+            "page_number": "13",
+            "item_ids": ("A", "B"),
+        }
+        changed = wait_for_page_change(FakePage(), before, timeout_seconds=0.1)
+        self.assertIsNotNone(changed)
+        self.assertEqual(changed["page_number"], "14")
+        self.assertEqual(changed["item_ids"], ("C", "D"))
 
     def test_run_batch_prompts_for_store_url(self):
         batch = (ROOT / "run.bat").read_text(encoding="utf-8")

@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Iterable
 from urllib.parse import urljoin, urlparse
 
 from openpyxl import Workbook
@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 
 DEFAULT_OUTPUT = f"ruten_products_{datetime.now():%Y%m%d}.xlsx"
 RUTEN_HOSTS = {"www.ruten.com.tw", "ruten.com.tw", "goods.ruten.com.tw"}
+DEFAULT_PAGE_DELAY = 1
+PAGE_CHANGE_TIMEOUT_SECONDS = 15.0
+PAGE_TURN_ATTEMPTS = 3
 
 TITLE_KEYS = (
     "title", "name", "item_name", "itemName", "product_name", "productName",
@@ -295,6 +298,85 @@ DOM_SCRIPT = r"""
 """
 
 
+PAGE_STATE_SCRIPT = r"""
+() => {
+  const activeSelectors = [
+    '[aria-current="page"]',
+    '.pagination li.active',
+    '.rt-pagination li.active',
+    'li.page-to.active',
+    '.page-to.active',
+  ];
+  let pageNumber = '';
+  for (const selector of activeSelectors) {
+    const element = document.querySelector(selector);
+    if (element) {
+      pageNumber = (element.textContent || '').trim();
+      if (pageNumber) break;
+    }
+  }
+  const itemIds = [...document.querySelectorAll('a[href*="/item/show?"]')]
+    .map((anchor) => {
+      const match = (anchor.href || '').match(/\/item\/show\?([A-Za-z0-9_-]+)/i);
+      return match ? match[1] : '';
+    })
+    .filter(Boolean);
+  return {
+    pageNumber,
+    itemIds: [...new Set(itemIds)].sort(),
+  };
+}
+"""
+
+
+def current_page_state(page: Page) -> dict[str, Any]:
+    try:
+        state = page.evaluate(PAGE_STATE_SCRIPT) or {}
+    except Exception:
+        state = {}
+    return {
+        "url": page.url,
+        "page_number": clean_text(state.get("pageNumber")),
+        "item_ids": tuple(state.get("itemIds") or ()),
+    }
+
+
+def page_state_changed(before: dict[str, Any], after: dict[str, Any]) -> bool:
+    before_items = tuple(before.get("item_ids") or ())
+    after_items = tuple(after.get("item_ids") or ())
+    before_page = clean_text(before.get("page_number"))
+    after_page = clean_text(after.get("page_number"))
+    return bool(
+        after_items
+        and (
+            after_items != before_items
+            or (before_page and after_page and after_page != before_page)
+            or after.get("url") != before.get("url")
+        )
+    )
+
+
+def wait_for_page_change(
+    page: Page,
+    before: dict[str, Any],
+    timeout_seconds: float = PAGE_CHANGE_TIMEOUT_SECONDS,
+    product_count: Callable[[], int] | None = None,
+    before_product_count: int | None = None,
+) -> dict[str, Any] | None:
+    deadline = time.monotonic() + max(0.1, timeout_seconds)
+    while time.monotonic() < deadline:
+        after = current_page_state(page)
+        if product_count is not None and before_product_count is not None:
+            current_count = product_count()
+            if current_count > before_product_count:
+                after["product_count"] = current_count
+                return after
+        if page_state_changed(before, after):
+            return after
+        page.wait_for_timeout(250)
+    return None
+
+
 def products_from_dom(page: Page) -> list[Product]:
     products: list[Product] = []
     try:
@@ -352,11 +434,69 @@ def find_next_page(page: Page) -> Any:
                 disabled = locator.get_attribute("disabled") is not None
                 aria_disabled = locator.get_attribute("aria-disabled") == "true"
                 class_name = locator.get_attribute("class") or ""
-                if not disabled and not aria_disabled and "disabled" not in class_name.lower():
+                parent_class = locator.evaluate(
+                    "element => element.parentElement ? element.parentElement.className : ''"
+                ) or ""
+                blocked_classes = f"{class_name} {parent_class}".lower().split()
+                is_blocked = any(
+                    token in {"disabled", "disable", "current"} for token in blocked_classes
+                )
+                if not disabled and not aria_disabled and not is_blocked:
                     return locator
         except Exception:
             continue
     return None
+
+
+def turn_to_next_page(
+    page: Page,
+    collector: ProductCollector,
+    page_state: dict[str, Any],
+    page_delay: float,
+) -> tuple[bool, bool]:
+    """Return (page_turned, next_page_available)."""
+    turn_product_count = len(collector.products)
+    for attempt in range(1, PAGE_TURN_ATTEMPTS + 1):
+        if attempt > 1:
+            late_state = current_page_state(page)
+            if (
+                len(collector.products) > turn_product_count
+                or page_state_changed(page_state, late_state)
+            ):
+                page.wait_for_timeout(max(0, int(page_delay * 1_000)))
+                collector.add_many(products_from_dom(page))
+                return True, True
+
+        next_page = find_next_page(page)
+        if next_page is None:
+            return False, False
+        try:
+            next_page.scroll_into_view_if_needed()
+            next_page.click()
+            changed_state = wait_for_page_change(
+                page,
+                page_state,
+                product_count=lambda: len(collector.products),
+                before_product_count=turn_product_count,
+            )
+            if changed_state is None:
+                logging.warning(
+                    "Next-page attempt %d/%d did not receive new products or change the page.",
+                    attempt,
+                    PAGE_TURN_ATTEMPTS,
+                )
+                continue
+            page.wait_for_timeout(max(0, int(page_delay * 1_000)))
+            collector.add_many(products_from_dom(page))
+            return True, True
+        except Exception as exc:
+            logging.warning(
+                "Next-page attempt %d/%d failed: %s",
+                attempt,
+                PAGE_TURN_ATTEMPTS,
+                exc,
+            )
+    return False, True
 
 
 def scrape_store(
@@ -365,8 +505,8 @@ def scrape_store(
     max_pages: int,
     max_scrolls: int,
     delay: float,
+    page_delay: float = DEFAULT_PAGE_DELAY,
 ) -> tuple[list[Product], dict[str, str], str]:
-    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     from playwright.sync_api import sync_playwright
 
     collector = ProductCollector()
@@ -394,38 +534,45 @@ def scrape_store(
                 "Run again with --show-browser and complete verification manually."
             )
 
-        visited_signatures: set[tuple[str, str]] = set()
+        visited_signatures: set[tuple[str, str, tuple[str, ...], int]] = set()
         page_number = 0
+        reported_product_count = 0
         while True:
             page_number += 1
-            before = len(collector.products)
             logging.info("Collecting page %d...", page_number)
             scroll_until_stable(page, collector, max_scrolls, delay)
             collector.add_many(products_from_dom(page))
             after = len(collector.products)
-            logging.info("Collected %d products (%d new on this page).", after, after - before)
+            logging.info(
+                "Collected %d products (%d new on this page).",
+                after,
+                after - reported_product_count,
+            )
+            reported_product_count = after
 
-            urls = sorted(product.url for product in collector.products.values() if product.url)
-            signature = (page.url, urls[-1] if urls else "")
-            if signature in visited_signatures:
-                logging.warning("A repeated page was detected. Pagination stopped.")
-                break
-            visited_signatures.add(signature)
+            page_state = current_page_state(page)
+            signature = (
+                page_state["url"],
+                page_state["page_number"],
+                page_state["item_ids"],
+                after,
+            )
+            if page_state["page_number"] or page_state["item_ids"]:
+                if signature in visited_signatures:
+                    logging.warning("A repeated page was detected. Pagination stopped.")
+                    break
+                visited_signatures.add(signature)
             if max_pages and page_number >= max_pages:
                 break
-            next_page = find_next_page(page)
-            if next_page is None:
-                break
-            try:
-                next_page.scroll_into_view_if_needed()
-                next_page.click()
-                page.wait_for_load_state("domcontentloaded", timeout=45_000)
-                page.wait_for_timeout(max(700, int(delay * 1_000)))
-            except PlaywrightTimeoutError:
-                logging.warning("The next page timed out. Keeping all products collected so far.")
-                break
-            except Exception as exc:
-                logging.warning("Could not open the next page: %s", exc)
+            page_turned, next_page_available = turn_to_next_page(
+                page,
+                collector,
+                page_state,
+                page_delay,
+            )
+            if not page_turned and next_page_available:
+                logging.warning("Could not verify the next page after %d attempts. Pagination stopped.", PAGE_TURN_ATTEMPTS)
+            if not page_turned:
                 break
 
         cookies = {cookie["name"]: cookie["value"] for cookie in context.cookies()}
@@ -668,6 +815,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--detail-limit", type=int, default=0, help="Maximum product pages to inspect; 0 means all")
     parser.add_argument("--detail-workers", type=int, default=4, choices=range(1, 9), metavar="1-8")
     parser.add_argument("--delay", type=float, default=0.6, help="Delay between requests and scrolls")
+    parser.add_argument(
+        "--page-delay",
+        type=float,
+        default=DEFAULT_PAGE_DELAY,
+        help="Additional delay after a verified Ruten page change",
+    )
     parser.add_argument("--demo", action="store_true", help="Create one demo row without connecting to Ruten")
     return parser
 
@@ -695,7 +848,12 @@ def main() -> int:
 
     try:
         products, cookies, user_agent = scrape_store(
-            args.store_url, args.show_browser, args.max_pages, args.max_scrolls, args.delay
+            args.store_url,
+            args.show_browser,
+            args.max_pages,
+            args.max_scrolls,
+            args.delay,
+            args.page_delay,
         )
         if not products:
             raise RuntimeError(

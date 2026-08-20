@@ -24,21 +24,23 @@ Case 3 uses the following listing sequence:
 
 1. Open the matched card page.
 2. Click the add-product control to create the default listing.
-3. Wait for and open the full-edit panel.
+3. Wait for and open the full-edit panel, or reuse an inline editor that Kapaipai opened automatically.
 4. Set Product Price, Listed Quantity, and Product Note.
 5. Verify the entered values and save the changes.
 
-If an existing listing is detected, the workflow reuses its full-edit action instead of creating a duplicate. A card that is not found is recorded and skipped. Any error after a card is found, including product creation, full edit, field entry, or saving, stops the entire upload immediately, writes diagnostic files, returns an error code, and leaves the batch window paused.
+If an existing listing is detected, the workflow reuses its full-edit action or active inline editor instead of creating a duplicate. Newly created products continue through Full Edit even when Kapaipai also displays inline controls. A card that is not found is recorded and skipped. Any error after a card is found, including product creation, full edit, field entry, or saving, stops the entire upload immediately, writes diagnostic files, returns an error code, and leaves the batch window paused.
 
 After a card page opens, the workflow waits for either Full Edit or Add Product. This handles the short reload period after consecutive rows reference the same card: a delayed existing listing is reused instead of being misreported as a missing add-product control.
 
-Some cards have a zero quick-listing price when Kapaipai has no market price. Because Kapaipai silently ignores Add Product at zero price, the workflow initializes only a confirmed `$0` price with the Excel target price before creating the product. If the quick price cannot be identified, it is left unchanged and product creation continues. The full-edit panel still performs and verifies the final Product Price, Listed Quantity, and Product Note update.
+Some cards have a zero quick-listing price when Kapaipai has no market price. Because Kapaipai silently ignores Add Product at zero price, the workflow initializes only a confirmed `$0` price with the Excel target price before creating the product. If that price update exposes an existing listing's inline editor, the workflow raises total stock when necessary, updates the price and listed quantity, adds the note through Add Note when needed, and saves the listing directly. If the quick price cannot be identified, it is left unchanged and product creation continues. The final Product Price, Listed Quantity, and Product Note are still verified before saving.
 
 Kapaipai may replace a button in the DOM immediately after a successful click. For Add Product, Full Edit, and Save Changes, the workflow verifies the expected resulting UI state before deciding whether the action failed. This prevents a successful action from being reported as a timeout while preserving the immediate stop behavior for unverified upload errors.
 
 Category selection and card search are verified together and retried up to three times. The result matcher accepts both normal card codes such as `AGOV-JP002` and Kapaipai catalog-qualified codes such as `AGOV(1202)-JP002`. Only three failed verification rounds stop the workflow.
 
 Duplicate DOM labels for the same visible card code, rarity, and artwork are collapsed before version selection. Zero quick-listing prices are detected from either an input value or the visible price stepper, so text-only `$0` controls are initialized before Add Product is clicked.
+
+When the Excel title resolves to a known rarity, the Kapaipai result must match it exactly. For example, an Excel rarity of `N` cannot use an `SR` search result even when `SR` is the only result; the card is recorded as not found and skipped. The single-result fallback is used only when the source rarity is unresolved.
 
 Before every card search, the configured game category is actively reselected even when the label already appears correct. Search-history card codes are excluded from rarity detection, and an empty result must remain stable before it is accepted. This prevents delayed category resets from turning search-history chips into false card results.
 
@@ -49,6 +51,8 @@ Search-result rarity labels may begin with digits, including `20SER` and `25SER`
 For Cases 2 and 3, paste or drag an Excel path into the prompt. Press Enter without a path to use the latest `ruten_products_*.xlsx` file in the package folder.
 
 For Case 1, paste the complete Ruten store URL when prompted, for example `https://www.ruten.com.tw/store/example_seller/`. The exporter does not contain a default seller URL. When running the Python file directly, `--store-url` is required.
+
+Ruten store pagination is updated dynamically without a full browser reload. After clicking Next Page, the exporter treats newly received product IDs from Ruten's API as the primary success signal and uses displayed page changes only as a fallback. It then allows an additional three seconds for the page to settle. A failed page change is retried up to three times instead of treating the first duplicated page as the end of the store. The additional delay can be changed with `--page-delay` when running the exporter directly.
 
 ## Files
 

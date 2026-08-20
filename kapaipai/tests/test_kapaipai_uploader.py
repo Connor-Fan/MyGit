@@ -10,6 +10,7 @@ from openpyxl import Workbook, load_workbook
 from kapaipai_uploader import (
     CardNotFound,
     Listing,
+    ListingEditTarget,
     NeedsManualInput,
     PlaywrightError,
     PlaywrightTimeoutError,
@@ -25,8 +26,11 @@ from kapaipai_uploader import (
     deduplicate_search_results,
     detect_alt_art,
     ensure_ygo_filter,
+    ensure_inline_edit_note,
+    ensure_inline_stock_capacity,
     is_logged_in,
     is_rarity_label,
+    inline_decimal_field,
     kapaipai_result_code_pattern,
     looks_like_card_code,
     load_config,
@@ -37,6 +41,7 @@ from kapaipai_uploader import (
     read_listings,
     resolve_input,
     run_upload,
+    save_inline_edit,
     save_full_edit,
     set_price,
     set_full_edit_number,
@@ -97,6 +102,7 @@ class ParserTests(unittest.TestCase):
             "\u91d1\u947d": "QCSER",
             "\u96d5\u947d": "CR",
             "\u7d05\u5b57\u534a\u947d": "SER-SRV",
+            "\u96f7\u5c04": "HR",
             "\u7d05\u4eae": "UR",
             "\u85cd\u4eae": "UR",
         }
@@ -320,6 +326,13 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(choose_rarity(item, ["NPR"]), "NPR")
         with self.assertRaises(NeedsManualInput):
             choose_rarity(item, ["NPR", "SR"])
+
+    def test_explicit_rarity_mismatch_is_card_not_found(self):
+        item = Listing(3, "test", 3, 15, "18SP-JP203", "\u666e\u5361", "N", "", "", "95\uff5e97\u5206")
+        candidates = [SearchResultCandidate("18SP-JP203", "SR", False, object())]
+
+        with self.assertRaisesRegex(CardNotFound, "did not find rarity N.*available rarities: SR"):
+            choose_search_result(item, candidates)
 
     def test_price_stepper_uses_observed_values(self):
         state = {"value": 10}
@@ -682,8 +695,10 @@ class ParserTests(unittest.TestCase):
         with (
             patch(
                 "kapaipai_uploader.create_default_listing",
-                side_effect=lambda _page, _price, _max_clicks: order.append("create") or edit_button,
+                side_effect=lambda _page, _price, _max_clicks: order.append("create")
+                or ListingEditTarget("full", edit_button),
             ),
+            patch("kapaipai_uploader.inline_edit_panel", return_value=object()) as inline_probe,
             patch("kapaipai_uploader.open_full_edit", side_effect=lambda _page, _button: order.append("open_edit") or panel),
             patch("kapaipai_uploader.set_full_edit_number", side_effect=lambda _page, _panel, label, _value: order.append(label)),
             patch("kapaipai_uploader.set_full_edit_note", side_effect=lambda _page, _panel, _note: order.append("note")),
@@ -696,6 +711,31 @@ class ParserTests(unittest.TestCase):
             order,
             ["create", "open_edit", "\u5546\u54c1\u50f9\u683c", "\u5728\u552e\u6578\u91cf", "note", "enabled", "save"],
         )
+        inline_probe.assert_not_called()
+
+    def test_submit_listing_reuses_inline_editor(self):
+        order = []
+        panel = object()
+        item = Listing(1627, "test", 1, 100, "QCAC-JP037", "", "QCSER", "", "", "95\uff5e97\u5206")
+
+        with (
+            patch("kapaipai_uploader.create_default_listing", return_value=ListingEditTarget("inline", panel)),
+            patch(
+                "kapaipai_uploader.ensure_inline_stock_capacity",
+                side_effect=lambda _page, _panel, _quantity: order.append("stock"),
+            ),
+            patch(
+                "kapaipai_uploader.set_inline_edit_number",
+                side_effect=lambda _page, _panel, currency, _value: order.append("price" if currency else "quantity"),
+            ),
+            patch("kapaipai_uploader.ensure_inline_edit_note", side_effect=lambda _page, _panel, _note: order.append("note")),
+            patch("kapaipai_uploader.save_inline_edit", side_effect=lambda _page, _panel: order.append("save")),
+            patch("kapaipai_uploader.open_full_edit") as open_edit,
+        ):
+            submit_listing(object(), item, 1000)
+
+        self.assertEqual(order, ["stock", "price", "quantity", "note", "save"])
+        open_edit.assert_not_called()
 
     def test_existing_listing_reuses_full_edit_without_creating_duplicate(self):
         page = object()
@@ -704,7 +744,9 @@ class ParserTests(unittest.TestCase):
             patch("kapaipai_uploader.wait_for_listing_action", return_value=("edit", edit_button)),
             patch("kapaipai_uploader.quick_panel") as panel,
         ):
-            self.assertIs(create_default_listing(page), edit_button)
+            target = create_default_listing(page)
+        self.assertEqual(target.mode, "full")
+        self.assertIs(target.locator, edit_button)
         panel.assert_not_called()
 
     def test_listing_action_waits_for_delayed_full_edit(self):
@@ -737,7 +779,9 @@ class ParserTests(unittest.TestCase):
             patch("kapaipai_uploader.wait_for_listing_action", return_value=("add", add_button)),
             patch("kapaipai_uploader.wait_for_text_button", return_value=edit_button) as waiter,
         ):
-            self.assertIs(create_default_listing(page), edit_button)
+            target = create_default_listing(page)
+        self.assertEqual(target.mode, "full")
+        self.assertIs(target.locator, edit_button)
         add_button.click.assert_called_once_with(timeout=5000)
         waiter.assert_called_once_with(page, "\u5b8c\u6574\u7de8\u8f2f")
 
@@ -753,9 +797,31 @@ class ParserTests(unittest.TestCase):
             patch("kapaipai_uploader.wait_for_listing_action", return_value=("add", add_button)),
             patch("kapaipai_uploader.wait_for_text_button", return_value=edit_button),
         ):
-            self.assertIs(create_default_listing(page, 150, 1000), edit_button)
+            target = create_default_listing(page, 150, 1000)
+        self.assertEqual(target.mode, "full")
+        self.assertIs(target.locator, edit_button)
         set_price.assert_called_once_with(page, 150, 1000)
         add_button.click.assert_called_once_with(timeout=5000)
+
+    def test_zero_price_update_can_open_existing_inline_editor(self):
+        page = object()
+        quick_scope = object()
+        add_button = Mock()
+        inline_panel = object()
+        with (
+            patch("kapaipai_uploader.quick_panel", return_value=quick_scope),
+            patch("kapaipai_uploader.quick_currency_value", return_value=0),
+            patch("kapaipai_uploader.set_price") as set_price,
+            patch(
+                "kapaipai_uploader.wait_for_listing_action",
+                side_effect=[("add", add_button), ("inline_edit", inline_panel)],
+            ),
+        ):
+            target = create_default_listing(page, 100, 1000)
+        self.assertEqual(target.mode, "inline")
+        self.assertIs(target.locator, inline_panel)
+        set_price.assert_called_once_with(page, 100, 1000)
+        add_button.click.assert_not_called()
 
     def test_zero_quick_price_can_be_read_from_stepper_text(self):
         class EmptyFields:
@@ -783,7 +849,9 @@ class ParserTests(unittest.TestCase):
             patch("kapaipai_uploader.wait_for_listing_action", return_value=("add", add_button)),
             patch("kapaipai_uploader.wait_for_text_button", return_value=edit_button),
         ):
-            self.assertIs(create_default_listing(page, 5, 1000), edit_button)
+            target = create_default_listing(page, 5, 1000)
+        self.assertEqual(target.mode, "full")
+        self.assertIs(target.locator, edit_button)
         set_price.assert_not_called()
         add_button.click.assert_called_once_with(timeout=5000)
 
@@ -798,7 +866,9 @@ class ParserTests(unittest.TestCase):
             patch("kapaipai_uploader.wait_for_listing_action", return_value=("add", add_button)),
             patch("kapaipai_uploader.wait_for_text_button", return_value=edit_button),
         ):
-            self.assertIs(create_default_listing(page), edit_button)
+            target = create_default_listing(page)
+        self.assertEqual(target.mode, "full")
+        self.assertIs(target.locator, edit_button)
 
     def test_full_edit_timeout_is_accepted_when_panel_appears(self):
         page = Mock()
@@ -819,6 +889,61 @@ class ParserTests(unittest.TestCase):
             patch("kapaipai_uploader.full_edit_panel", return_value=None),
         ):
             save_full_edit(page, panel)
+        save_button.click.assert_called_once_with(timeout=5000)
+
+    def test_inline_decimal_fields_distinguish_price_and_quantity(self):
+        price = Mock()
+        price.is_visible.return_value = True
+        price.input_value.return_value = "$100"
+        quantity = Mock()
+        quantity.is_visible.return_value = True
+        quantity.input_value.return_value = "1"
+        fields = Mock()
+        fields.count.return_value = 2
+        fields.nth.side_effect = [price, quantity, price, quantity]
+        panel = Mock()
+        panel.locator.return_value = fields
+
+        self.assertIs(inline_decimal_field(panel, True), price)
+        self.assertIs(inline_decimal_field(panel, False), quantity)
+
+    def test_inline_stock_is_increased_before_listing_more_units(self):
+        stock = Mock()
+        stock.is_visible.return_value = True
+        stock.input_value.side_effect = ["1", "3"]
+        fields = Mock()
+        fields.count.return_value = 1
+        fields.nth.return_value = stock
+        panel = Mock()
+        panel.locator.return_value = fields
+        page = Mock()
+
+        ensure_inline_stock_capacity(page, panel, 3)
+
+        stock.fill.assert_called_once_with("3")
+        stock.press.assert_called_once_with("Tab")
+
+    def test_inline_note_uses_add_note_control(self):
+        page = object()
+        panel = Mock()
+        panel.inner_text.return_value = "\u65b0\u589e\u5099\u8a3b"
+        with (
+            patch("kapaipai_uploader.find_text_button", return_value=object()),
+            patch("kapaipai_uploader.set_note") as set_note,
+        ):
+            ensure_inline_edit_note(page, panel, "95\uff5e97\u5206")
+        set_note.assert_called_once_with(page, "95\uff5e97\u5206")
+
+    def test_inline_save_timeout_is_accepted_when_editor_closes(self):
+        page = Mock()
+        panel = object()
+        save_button = Mock()
+        save_button.click.side_effect = PlaywrightTimeoutError("detached after click")
+        with (
+            patch("kapaipai_uploader.find_text_button", return_value=save_button),
+            patch("kapaipai_uploader.inline_edit_panel", return_value=None),
+        ):
+            save_inline_edit(page, panel)
         save_button.click.assert_called_once_with(timeout=5000)
 
     def test_full_edit_number_is_filled_and_verified(self):

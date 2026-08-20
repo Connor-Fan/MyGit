@@ -48,7 +48,7 @@ CONSIGNOR_RE = re.compile(r"\u5bc4\u8ce3\s*[:\uff1a]\s*([A-Za-z0-9\u3400-\u9fff]
 PRICE_RE = re.compile(r"-?\d+(?:\.\d+)?")
 RESULT_RARITY_RE = re.compile(r"^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 PARENTHESIZED_RE = re.compile(r"[\uff08(]([^()\uff08\uff09]*)[)\uff09]")
-PROGRAM_VERSION = "2026.08.17-unified-12-numeric-rarity"
+PROGRAM_VERSION = "2026.08.20-unified-15-strict-rarity"
 LOGIN_SETTLE_MS = 5000
 SEARCH_UI_TIMEOUT_SECONDS = 30
 SEARCH_MAX_ATTEMPTS = 3
@@ -85,6 +85,12 @@ class SearchResultCandidate:
     rarity: str
     is_alt_art: bool
     locator: Any = None
+
+
+@dataclass
+class ListingEditTarget:
+    mode: str
+    locator: Any
 
 
 class NeedsManualInput(RuntimeError):
@@ -772,15 +778,22 @@ def available_rarities(page: Page, card_code: str, is_alt_art: bool = False) -> 
 
 
 def choose_rarity(item: Listing, choices: list[str]) -> str:
-    if item.rarity and item.rarity.upper() in choices:
-        return item.rarity.upper()
+    if item.rarity:
+        expected = item.rarity.upper()
+        if expected in choices:
+            return expected
+        available = ", ".join(choices) if choices else "none"
+        raise CardNotFound(
+            f"Kapaipai did not find rarity {expected} for {item.card_code}; "
+            f"available rarities: {available}."
+        )
     if not choices:
         raise CardNotFound("Kapaipai did not return a selectable card version.")
     if len(choices) == 1:
         only = choices[0]
         print(f"The rarity was ambiguous in the title, but {only} is the only result and was selected.")
         return only
-    expected = item.rarity or item.rarity_hint or "Unknown"
+    expected = item.rarity_hint or "Unknown"
     raise NeedsManualInput(
         f"Rarity '{expected}' does not uniquely match the search results: {', '.join(choices)}"
     )
@@ -1222,6 +1235,25 @@ def wait_for_text_button(page: Page, label: str, timeout_seconds: int = 15) -> L
     raise NeedsManualInput(f"The '{label}' control did not appear within {timeout_seconds} seconds.")
 
 
+def inline_edit_panel(page: Page) -> Locator | None:
+    save_button = find_text_button(page, "\u4fdd\u5b58\u8b8a\u66f4")
+    if save_button is None:
+        return None
+    selectors = (
+        "xpath=ancestor::div[.//input[@inputmode='decimal'] and "
+        ".//*[normalize-space()='\u5fa9\u539f\u8b8a\u66f4']][1]",
+        "xpath=ancestor::div[.//input[@inputmode='decimal']][1]",
+    )
+    for selector in selectors:
+        try:
+            panel = save_button.locator(selector)
+            if panel.count() and panel.is_visible():
+                return panel
+        except PlaywrightTimeoutError:
+            continue
+    return None
+
+
 def wait_for_listing_action(page: Page, timeout_seconds: int = 15) -> tuple[str, Locator]:
     edit_label = "\u5b8c\u6574\u7de8\u8f2f"
     add_label = "\u65b0\u589e\u5546\u54c1"
@@ -1230,6 +1262,9 @@ def wait_for_listing_action(page: Page, timeout_seconds: int = 15) -> tuple[str,
         edit_button = find_text_button(page, edit_label)
         if edit_button is not None:
             return "edit", edit_button
+        edit_panel = inline_edit_panel(page)
+        if edit_panel is not None:
+            return "inline_edit", edit_panel
         add_button = find_text_button(quick_panel(page), add_label)
         if add_button is None:
             add_button = find_text_button(page, add_label)
@@ -1237,7 +1272,7 @@ def wait_for_listing_action(page: Page, timeout_seconds: int = 15) -> tuple[str,
             return "add", add_button
         page.wait_for_timeout(250)
     raise NeedsManualInput(
-        "Neither the full-edit control nor the add-product control appeared "
+        "Neither the full-edit control, add-product control, nor inline editor appeared "
         f"within {timeout_seconds} seconds."
     )
 
@@ -1246,12 +1281,15 @@ def create_default_listing(
     page: Page,
     target_price: int | None = None,
     max_clicks: int = 1000,
-) -> Locator:
+) -> ListingEditTarget:
     edit_label = "\u5b8c\u6574\u7de8\u8f2f"
     action, action_button = wait_for_listing_action(page)
+    if action == "inline_edit":
+        print("An existing listing is already open for inline editing. Reusing it.")
+        return ListingEditTarget("inline", action_button)
     if action == "edit":
         print("An existing listing was detected. Reusing its full-edit action.")
-        return action_button
+        return ListingEditTarget("full", action_button)
 
     if target_price is not None:
         initial_price = quick_currency_value(quick_panel(page))
@@ -1266,9 +1304,15 @@ def create_default_listing(
             )
             set_price(page, target_price, max_clicks)
             action, action_button = wait_for_listing_action(page)
+            if action == "inline_edit":
+                print(
+                    "The price update opened an existing listing for inline editing. "
+                    "Reusing it instead of creating a duplicate."
+                )
+                return ListingEditTarget("inline", action_button)
             if action == "edit":
                 print("An existing listing appeared after the price update. Reusing its full-edit action.")
-                return action_button
+                return ListingEditTarget("full", action_button)
 
     add_button = action_button
 
@@ -1288,7 +1332,7 @@ def create_default_listing(
         ) from (click_error or error)
 
     print("The default product was created and verified by the full-edit action.")
-    return edit_button
+    return ListingEditTarget("full", edit_button)
 
 
 def full_edit_panel(page: Page) -> Locator | None:
@@ -1400,6 +1444,130 @@ def set_full_edit_note(page: Page, panel: Locator, note: str) -> None:
         raise NeedsManualInput(f"The product-note readback is '{actual}', not the target note.")
 
 
+def inline_decimal_field(panel: Locator, currency: bool) -> Locator:
+    fields = panel.locator("input[inputmode='decimal']")
+    visible_fields: list[tuple[Locator, str]] = []
+    for index in range(fields.count()):
+        field = fields.nth(index)
+        try:
+            if field.is_visible():
+                visible_fields.append((field, clean(field.input_value())))
+        except PlaywrightTimeoutError:
+            continue
+    if currency:
+        candidates = [field for field, raw in visible_fields if "$" in raw]
+        if not candidates and len(visible_fields) >= 2:
+            candidates = [visible_fields[0][0]]
+        label = "price"
+    else:
+        if len(visible_fields) >= 2:
+            candidates = [visible_fields[-1][0]]
+        else:
+            candidates = [field for field, raw in visible_fields if "$" not in raw]
+        label = "quantity"
+    if not candidates:
+        raise NeedsManualInput(f"The inline {label} field was not found.")
+    return candidates[0]
+
+
+def set_inline_edit_number(page: Page, panel: Locator, currency: bool, target: int) -> None:
+    field = inline_decimal_field(panel, currency)
+    label = "price" if currency else "quantity"
+    try:
+        if input_integer(field) == target:
+            return
+        field.click()
+        field.fill(str(target))
+        field.press("Tab")
+        page.wait_for_timeout(300)
+    except PlaywrightTimeoutError as error:
+        raise NeedsManualInput(f"The inline {label} could not be changed to {target}.") from error
+    actual = input_integer(field)
+    if actual != target:
+        raise NeedsManualInput(f"The inline {label} readback is {actual}, not the target {target}.")
+
+
+def ensure_inline_stock_capacity(page: Page, panel: Locator, target_quantity: int) -> None:
+    fields = panel.locator("input[type='tel']")
+    for index in range(fields.count()):
+        field = fields.nth(index)
+        try:
+            if not field.is_visible():
+                continue
+            current = input_integer(field)
+            if current is None:
+                continue
+            if current >= target_quantity:
+                return
+            field.click()
+            field.fill(str(target_quantity))
+            field.press("Tab")
+            page.wait_for_timeout(300)
+            actual = input_integer(field)
+            if actual != target_quantity:
+                raise NeedsManualInput(
+                    f"The inline total-stock readback is {actual}, not the required {target_quantity}."
+                )
+            return
+        except PlaywrightTimeoutError as error:
+            raise NeedsManualInput(
+                f"The inline total stock could not be increased to {target_quantity}."
+            ) from error
+    raise NeedsManualInput("The inline total-stock field was not found.")
+
+
+def ensure_inline_edit_note(page: Page, panel: Locator, note: str) -> None:
+    target = clean(note)
+    if not target or target in clean(panel.inner_text()):
+        return
+    if find_text_button(panel, "\u65b0\u589e\u5099\u8a3b") is not None:
+        set_note(page, note)
+        return
+    field = visible(panel.get_by_placeholder(re.compile("\u5099\u8a3b|\u5206\u6578|\u8aaa\u660e")))
+    if field is None:
+        field = visible(panel.locator("textarea"))
+    if field is not None:
+        field.fill(note)
+        field.press("Tab")
+        page.wait_for_timeout(250)
+        try:
+            if clean(field.input_value()) == target:
+                return
+        except PlaywrightTimeoutError:
+            pass
+    raise NeedsManualInput(
+        "The inline editor is open, but its product note does not match the target note "
+        "and no editable note field was found."
+    )
+
+
+def save_inline_edit(page: Page, panel: Locator, timeout_seconds: int = 15) -> None:
+    save_button = find_text_button(panel, "\u4fdd\u5b58\u8b8a\u66f4")
+    if save_button is None:
+        raise NeedsManualInput("The inline save-changes control was not found.")
+    click_error: PlaywrightTimeoutError | None = None
+    try:
+        save_button.click(timeout=5000)
+    except PlaywrightTimeoutError as error:
+        click_error = error
+        print("The inline save control was replaced during the click. Verifying the resulting state.")
+
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if inline_edit_panel(page) is None:
+            if click_error is not None:
+                print("The inline editor closed, so the changes were saved.")
+            return
+        page.wait_for_timeout(250)
+    error = SubmissionUnverified(
+        "Inline save changes was clicked, but the editor did not close. "
+        "The workflow stopped because the update could not be verified."
+    )
+    if click_error is not None:
+        raise error from click_error
+    raise error
+
+
 def ensure_full_edit_listing_enabled(panel: Locator) -> None:
     switches = panel.get_by_role("switch")
     for index in range(switches.count()):
@@ -1451,8 +1619,17 @@ def save_full_edit(page: Page, panel: Locator, timeout_seconds: int = 15) -> Non
 
 
 def submit_listing(page: Page, item: Listing, max_clicks: int) -> None:
-    edit_button = create_default_listing(page, item.price, max_clicks)
-    panel = open_full_edit(page, edit_button)
+    target = create_default_listing(page, item.price, max_clicks)
+    if target.mode == "inline":
+        inline_panel = target.locator
+        print("Applying the target values in the existing listing's inline editor.")
+        ensure_inline_stock_capacity(page, inline_panel, item.quantity)
+        set_inline_edit_number(page, inline_panel, True, item.price)
+        set_inline_edit_number(page, inline_panel, False, item.quantity)
+        ensure_inline_edit_note(page, inline_panel, item.note)
+        save_inline_edit(page, inline_panel)
+        return
+    panel = open_full_edit(page, target.locator)
     set_full_edit_number(page, panel, "\u5546\u54c1\u50f9\u683c", item.price)
     set_full_edit_number(page, panel, "\u5728\u552e\u6578\u91cf", item.quantity)
     set_full_edit_note(page, panel, item.note)
