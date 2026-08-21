@@ -48,7 +48,7 @@ CONSIGNOR_RE = re.compile(r"\u5bc4\u8ce3\s*[:\uff1a]\s*([A-Za-z0-9\u3400-\u9fff]
 PRICE_RE = re.compile(r"-?\d+(?:\.\d+)?")
 RESULT_RARITY_RE = re.compile(r"^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 PARENTHESIZED_RE = re.compile(r"[\uff08(]([^()\uff08\uff09]*)[)\uff09]")
-PROGRAM_VERSION = "2026.08.21-unified-16-inline-save-verification"
+PROGRAM_VERSION = "2026.08.21-unified-17-artwork-ambiguity"
 LOGIN_SETTLE_MS = 5000
 SEARCH_UI_TIMEOUT_SECONDS = 30
 SEARCH_MAX_ATTEMPTS = 3
@@ -98,6 +98,10 @@ class NeedsManualInput(RuntimeError):
 
 
 class CardNotFound(NeedsManualInput):
+    pass
+
+
+class ManualListingRequired(CardNotFound):
     pass
 
 
@@ -698,13 +702,16 @@ def kapaipai_result_code_pattern(card_code: str) -> re.Pattern[str]:
     match = re.fullmatch(r"(.+)-JP(\d{3,4})", canonical)
     if not match:
         alternatives = "|".join(re.escape(value) for value in kapaipai_code_variants(canonical))
-        return re.compile(rf"^(?:{alternatives})\s*(?:[\uff08(]\u7570\u5716[)\uff09])?$", re.I)
+        return re.compile(
+            rf"^(?:{alternatives})\s*(?:[\uff08(]\u7570\u5716[^()\uff08\uff09]*[)\uff09])?$",
+            re.I,
+        )
     set_code, number = match.groups()
     set_pattern = re.escape(set_code)
     catalog_qualifier = r"(?:[\uff08(][^()\uff08\uff09]+[)\uff09])?"
     return re.compile(
         rf"^{set_pattern}{catalog_qualifier}-(?:JP)?{re.escape(number)}"
-        rf"\s*(?:[\uff08(]\u7570\u5716[)\uff09])?$",
+        rf"\s*(?:[\uff08(]\u7570\u5716[^()\uff08\uff09]*[)\uff09])?$",
         re.I,
     )
 
@@ -801,21 +808,31 @@ def choose_rarity(item: Listing, choices: list[str]) -> str:
 
 def choose_search_result(item: Listing, candidates: list[SearchResultCandidate]) -> SearchResultCandidate:
     candidates = deduplicate_search_results(candidates)
-    matching_version = [result for result in candidates if result.is_alt_art == item.is_alt_art]
-    version_name = "alternate-art version" if item.is_alt_art else "standard version"
-    if not matching_version:
-        raise CardNotFound(f"Kapaipai did not find the {version_name} of {item.card_code}.")
     choices: list[str] = []
-    for result in matching_version:
+    for result in candidates:
         if result.rarity not in choices:
             choices.append(result.rarity)
     rarity = choose_rarity(item, choices)
-    matching_rarity = [result for result in matching_version if result.rarity == rarity]
-    if len(matching_rarity) != 1:
-        raise NeedsManualInput(
-            f"The {version_name} rarity {rarity} for {item.card_code} is not unique."
-        )
-    return matching_rarity[0]
+    matching_rarity = [result for result in candidates if result.rarity == rarity]
+
+    # Kapaipai's alternate-art label is relative to versions within the same set.
+    # A Ruten title may say alternate art because its picture differs from another
+    # set, so one same-set result is safe regardless of the two sites' labels.
+    if len(matching_rarity) == 1:
+        return matching_rarity[0]
+
+    matching_version = [
+        result for result in matching_rarity
+        if result.is_alt_art == item.is_alt_art
+    ]
+    if len(matching_version) == 1:
+        return matching_version[0]
+
+    variants = ", ".join(result.code_text for result in matching_rarity)
+    raise ManualListingRequired(
+        f"{item.card_code} rarity {rarity} has multiple artwork variants in the same set "
+        f"({variants}). Skip automatic upload and list this product manually."
+    )
 
 
 def search_and_open(page: Page, item: Listing, game_filter: str) -> str:
@@ -1811,6 +1828,7 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
     state_path = progress_path(source)
     progress = load_progress(state_path)
     completed = {int(row) for row in progress.get("completed_rows", [])}
+    manual_rows = {int(row) for row in progress.get("manual_rows", [])}
     verified_rows = {
         int(record["row"])
         for record in progress.get("items", [])
@@ -1824,11 +1842,15 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
             + ", ".join(map(str, legacy_rows))
         )
         print("Check the prices of these existing products on Kapaipai before continuing.")
-    queue = [item for item in listings if item.row not in completed and item.row >= args.start_row]
+    queue = [
+        item for item in listings
+        if item.row not in completed and item.row not in manual_rows and item.row >= args.start_row
+    ]
     if args.limit:
         queue = queue[: args.limit]
     print(
         f"Loaded {len(listings)} listings; {len(completed)} completed; "
+        f"{len(manual_rows)} reserved for manual listing; "
         f"{len(queue)} queued for this run."
     )
     if not queue:
@@ -1890,6 +1912,20 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
                     print(f"Diagnostic file: {diagnostic}")
                     print("The workflow stopped to prevent the batch from using the wrong category.")
                     raise
+                except ManualListingRequired as error:
+                    item.status = "Manual listing required"
+                    item.message = str(error)
+                    manual_rows.add(item.row)
+                    progress["manual_rows"] = sorted(manual_rows)
+                    progress.setdefault("items", []).append({
+                        **asdict(item),
+                        "time": datetime.now().isoformat(timespec="seconds"),
+                        "program_version": PROGRAM_VERSION,
+                        "verified_fields": False,
+                    })
+                    save_progress(state_path, progress)
+                    print(f"Skipped for manual listing: {error}")
+                    continue
                 except CardNotFound as error:
                     item.status = "Card not found"
                     item.message = str(error)

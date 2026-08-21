@@ -11,6 +11,7 @@ from kapaipai_uploader import (
     CardNotFound,
     Listing,
     ListingEditTarget,
+    ManualListingRequired,
     NeedsManualInput,
     PlaywrightError,
     PlaywrightTimeoutError,
@@ -156,6 +157,12 @@ class ParserTests(unittest.TestCase):
         self.assertRegex("AGOV\uff081202\uff09-JP002", pattern)
         self.assertNotRegex("AGOV(1202)-JP003", pattern)
 
+    def test_kapaipai_card_code_accepts_named_artwork_variants(self):
+        pattern = kapaipai_result_code_pattern("SD47-JP001")
+        self.assertRegex("SD47-JP001(\u7570\u5716A)", pattern)
+        self.assertRegex("SD47-JP001(\u7570\u5716B)", pattern)
+        self.assertRegex("SD47-JP001\uff08\u7570\u5716C\uff09", pattern)
+
     def test_search_history_card_codes_are_not_rarity_labels(self):
         self.assertTrue(looks_like_card_code("DAMA-JP008"))
         self.assertTrue(looks_like_card_code("AGOV(1202)-JP002"))
@@ -298,6 +305,46 @@ class ParserTests(unittest.TestCase):
         normal = Listing(3, "normal", 1, 20, "PAC1-JP018", "\u534a\u947d", "SER", "", "", "95\uff5e97\u5206")
         self.assertEqual(choose_search_result(alt, candidates).code_text, "PAC1-018(\u7570\u5716)")
         self.assertEqual(choose_search_result(normal, candidates).code_text, "PAC1-018")
+
+    def test_same_set_multiple_artworks_require_manual_listing(self):
+        item = Listing(
+            2528,
+            "\u3010\u7f85\u52c3\u5c0f\u8216\u3011\u904a\u6232\u738b SD47-JP001 \u9752\u773c\u767d\u9f8d EX\u7248 (\u666e\u5361)",
+            1,
+            1,
+            "SD47-JP001",
+            "\u666e\u5361",
+            "N",
+            "",
+            "",
+            "95\uff5e97\u5206",
+        )
+        candidates = [
+            SearchResultCandidate("SD47-JP001(\u7570\u5716A)", "N", True),
+            SearchResultCandidate("SD47-JP001(\u7570\u5716B)", "N", True),
+            SearchResultCandidate("SD47-JP001(\u7570\u5716C)", "N", True),
+        ]
+
+        with self.assertRaisesRegex(ManualListingRequired, "multiple artwork variants"):
+            choose_search_result(item, candidates)
+
+    def test_single_same_set_result_ignores_cross_set_alt_art_label(self):
+        item = Listing(
+            1658,
+            "\u3010\u7f85\u52c3\u5c0f\u8216\u3011\u904a\u6232\u738b LOCH-JP030 \u9ed1\u9b54\u5973 (\u7570\u5716.\u91d1\u4eae)",
+            1,
+            20,
+            "LOCH-JP030",
+            "\u91d1\u4eae",
+            "SER",
+            "",
+            "",
+            "95\uff5e97\u5206",
+            True,
+        )
+        candidate = SearchResultCandidate("LOCH-JP030", "SER", False, object())
+
+        self.assertIs(choose_search_result(item, [candidate]), candidate)
 
     def test_preview_has_alt_art_column(self):
         with tempfile.TemporaryDirectory() as temp:
