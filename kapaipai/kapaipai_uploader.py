@@ -48,7 +48,7 @@ CONSIGNOR_RE = re.compile(r"\u5bc4\u8ce3\s*[:\uff1a]\s*([A-Za-z0-9\u3400-\u9fff]
 PRICE_RE = re.compile(r"-?\d+(?:\.\d+)?")
 RESULT_RARITY_RE = re.compile(r"^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 PARENTHESIZED_RE = re.compile(r"[\uff08(]([^()\uff08\uff09]*)[)\uff09]")
-PROGRAM_VERSION = "2026.08.20-unified-15-strict-rarity"
+PROGRAM_VERSION = "2026.08.21-unified-16-inline-save-verification"
 LOGIN_SETTLE_MS = 5000
 SEARCH_UI_TIMEOUT_SECONDS = 30
 SEARCH_MAX_ATTEMPTS = 3
@@ -1541,10 +1541,68 @@ def ensure_inline_edit_note(page: Page, panel: Locator, note: str) -> None:
     )
 
 
-def save_inline_edit(page: Page, panel: Locator, timeout_seconds: int = 15) -> None:
+def control_is_inactive(control: Locator, max_levels: int = 5) -> bool:
+    candidate = control
+    for _ in range(max_levels):
+        try:
+            if not candidate.is_enabled():
+                return True
+            disabled = candidate.get_attribute("disabled")
+            aria_disabled = clean(candidate.get_attribute("aria-disabled")).lower()
+            class_name = clean(candidate.get_attribute("class")).lower()
+            if disabled is not None or aria_disabled == "true" or "disabled" in class_name:
+                return True
+            parent = candidate.locator("xpath=..")
+            if not parent.count():
+                break
+            candidate = parent
+        except PlaywrightError:
+            break
+    return False
+
+
+def inline_edit_values_match(
+    panel: Locator,
+    expected_price: int,
+    expected_quantity: int,
+    expected_note: str,
+) -> bool:
+    try:
+        if input_integer(inline_decimal_field(panel, True)) != expected_price:
+            return False
+        if input_integer(inline_decimal_field(panel, False)) != expected_quantity:
+            return False
+        target_note = clean(expected_note)
+        if target_note and target_note not in clean(panel.inner_text()):
+            note_field = visible(panel.get_by_placeholder(re.compile("\u5099\u8a3b|\u5206\u6578|\u8aaa\u660e")))
+            if note_field is None:
+                note_field = visible(panel.locator("textarea"))
+            if note_field is None or clean(note_field.input_value()) != target_note:
+                return False
+        return True
+    except PlaywrightError:
+        return False
+
+
+def save_inline_edit(
+    page: Page,
+    panel: Locator,
+    expected_price: int | None = None,
+    expected_quantity: int | None = None,
+    expected_note: str = "",
+    timeout_seconds: int = 15,
+) -> None:
     save_button = find_text_button(panel, "\u4fdd\u5b58\u8b8a\u66f4")
     if save_button is None:
         raise NeedsManualInput("The inline save-changes control was not found.")
+    if (
+        expected_price is not None
+        and expected_quantity is not None
+        and control_is_inactive(save_button)
+        and inline_edit_values_match(panel, expected_price, expected_quantity, expected_note)
+    ):
+        print("The existing inline listing already matches the target values.")
+        return
     click_error: PlaywrightTimeoutError | None = None
     try:
         save_button.click(timeout=5000)
@@ -1554,10 +1612,28 @@ def save_inline_edit(page: Page, panel: Locator, timeout_seconds: int = 15) -> N
 
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        if inline_edit_panel(page) is None:
+        active_panel = inline_edit_panel(page)
+        if active_panel is None:
             if click_error is not None:
                 print("The inline editor closed, so the changes were saved.")
             return
+        if expected_price is not None and expected_quantity is not None:
+            active_save = find_text_button(active_panel, "\u4fdd\u5b58\u8b8a\u66f4")
+            if (
+                active_save is not None
+                and control_is_inactive(active_save)
+                and inline_edit_values_match(
+                    active_panel,
+                    expected_price,
+                    expected_quantity,
+                    expected_note,
+                )
+            ):
+                print(
+                    "The inline editor remained open, but the saved values match and "
+                    "the save control is inactive."
+                )
+                return
         page.wait_for_timeout(250)
     error = SubmissionUnverified(
         "Inline save changes was clicked, but the editor did not close. "
@@ -1627,7 +1703,7 @@ def submit_listing(page: Page, item: Listing, max_clicks: int) -> None:
         set_inline_edit_number(page, inline_panel, True, item.price)
         set_inline_edit_number(page, inline_panel, False, item.quantity)
         ensure_inline_edit_note(page, inline_panel, item.note)
-        save_inline_edit(page, inline_panel)
+        save_inline_edit(page, inline_panel, item.price, item.quantity, item.note)
         return
     panel = open_full_edit(page, target.locator)
     set_full_edit_number(page, panel, "\u5546\u54c1\u50f9\u683c", item.price)

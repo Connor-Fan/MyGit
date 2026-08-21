@@ -1,12 +1,14 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 
 from ruten_exporter import (
     DEFAULT_PAGE_DELAY,
     Product,
+    ProductCollector,
     build_parser,
     detail_quantity_from_html,
     export_excel,
@@ -15,6 +17,7 @@ from ruten_exporter import (
     page_state_changed,
     products_from_json,
     store_list_url,
+    turn_to_next_page,
     validate_store_url,
     wait_for_page_change,
 )
@@ -102,6 +105,69 @@ class ParserTests(unittest.TestCase):
         self.assertIsNotNone(changed)
         self.assertEqual(changed["page_number"], "14")
         self.assertEqual(changed["item_ids"], ("C", "D"))
+
+    def test_wait_for_page_change_accepts_new_api_products_when_dom_is_unchanged(self):
+        class FakePage:
+            url = "https://www.ruten.com.tw/store/example_seller/list"
+
+            def evaluate(self, _script):
+                return {"pageNumber": "1", "itemIds": []}
+
+            def wait_for_timeout(self, _milliseconds):
+                return None
+
+        counts = iter([30, 60])
+        changed = wait_for_page_change(
+            FakePage(),
+            {"url": FakePage.url, "page_number": "1", "item_ids": ()},
+            timeout_seconds=0.1,
+            product_count=lambda: next(counts),
+            before_product_count=30,
+        )
+        self.assertIsNotNone(changed)
+        self.assertEqual(changed["product_count"], 60)
+
+    def test_successful_api_page_change_clicks_next_only_once(self):
+        collector = ProductCollector()
+        for index in range(30):
+            collector.add(Product(f"Initial product {index}", 10, 1, item_id=f"A{index:08d}"))
+
+        class FakePage:
+            url = "https://www.ruten.com.tw/store/example_seller/list"
+
+            def evaluate(self, script):
+                if "activeSelectors" in script:
+                    return {"pageNumber": "1", "itemIds": []}
+                return []
+
+            def wait_for_timeout(self, _milliseconds):
+                return None
+
+        class FakeNextPage:
+            def __init__(self):
+                self.click_count = 0
+
+            def scroll_into_view_if_needed(self):
+                return None
+
+            def click(self):
+                self.click_count += 1
+                for index in range(30):
+                    collector.add(Product(f"Next product {index}", 10, 1, item_id=f"B{index:08d}"))
+
+        next_page = FakeNextPage()
+        with patch("ruten_exporter.find_next_page", return_value=next_page):
+            page_turned, next_available = turn_to_next_page(
+                FakePage(),
+                collector,
+                {"url": FakePage.url, "page_number": "1", "item_ids": ()},
+                page_delay=0,
+            )
+
+        self.assertTrue(page_turned)
+        self.assertTrue(next_available)
+        self.assertEqual(next_page.click_count, 1)
+        self.assertEqual(len(collector.products), 60)
 
     def test_run_batch_prompts_for_store_url(self):
         batch = (ROOT / "run.bat").read_text(encoding="utf-8")

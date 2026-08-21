@@ -729,7 +729,10 @@ class ParserTests(unittest.TestCase):
                 side_effect=lambda _page, _panel, currency, _value: order.append("price" if currency else "quantity"),
             ),
             patch("kapaipai_uploader.ensure_inline_edit_note", side_effect=lambda _page, _panel, _note: order.append("note")),
-            patch("kapaipai_uploader.save_inline_edit", side_effect=lambda _page, _panel: order.append("save")),
+            patch(
+                "kapaipai_uploader.save_inline_edit",
+                side_effect=lambda _page, _panel, *_expected: order.append("save"),
+            ),
             patch("kapaipai_uploader.open_full_edit") as open_edit,
         ):
             submit_listing(object(), item, 1000)
@@ -944,6 +947,20 @@ class ParserTests(unittest.TestCase):
             patch("kapaipai_uploader.inline_edit_panel", return_value=None),
         ):
             save_inline_edit(page, panel)
+        save_button.click.assert_called_once_with(timeout=5000)
+
+    def test_inline_save_accepts_matching_values_when_editor_stays_open(self):
+        page = Mock()
+        panel = object()
+        save_button = Mock()
+        with (
+            patch("kapaipai_uploader.find_text_button", return_value=save_button),
+            patch("kapaipai_uploader.inline_edit_panel", return_value=panel),
+            patch("kapaipai_uploader.inline_edit_values_match", return_value=True),
+            patch("kapaipai_uploader.control_is_inactive", side_effect=[False, True]),
+        ):
+            save_inline_edit(page, panel, 5, 2, "95\uff5e97\u5206")
+
         save_button.click.assert_called_once_with(timeout=5000)
 
     def test_full_edit_number_is_filled_and_verified(self):
