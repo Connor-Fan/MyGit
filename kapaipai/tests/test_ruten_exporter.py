@@ -62,12 +62,12 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(args.store_url, url)
         self.assertEqual(validate_store_url(f'"{url}"'), url)
 
-    def test_page_delay_defaults_to_three_seconds(self):
+    def test_page_delay_defaults_to_one_second(self):
         args = build_parser().parse_args([
             "--store-url", "https://www.ruten.com.tw/store/example_seller/", "--demo"
         ])
         self.assertEqual(args.page_delay, DEFAULT_PAGE_DELAY)
-        self.assertEqual(args.page_delay, 3.0)
+        self.assertEqual(args.page_delay, 1)
 
     def test_page_state_requires_changed_displayed_products(self):
         before = {
@@ -174,6 +174,13 @@ class ParserTests(unittest.TestCase):
         self.assertIn("Enter or paste the Ruten store URL", batch)
         self.assertIn('--store-url "%STORE_URL%"', batch)
         self.assertNotIn('call :run_python "ruten_exporter.py"\n', batch)
+
+    def test_run_batch_uses_user_facing_kapaipai_descriptions(self):
+        batch = (ROOT / "run.bat").read_text(encoding="utf-8")
+        uploader = (ROOT / "kapaipai_uploader.py").read_text(encoding="utf-8")
+        self.assertIn("Create Kapaipai preview and skipped-items report", batch)
+        self.assertIn("Upload products to Kapaipai", batch)
+        self.assertNotIn("Use --execute only after reviewing the preview.", uploader)
 
 
 class ExcelTests(unittest.TestCase):

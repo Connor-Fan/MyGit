@@ -12,8 +12,8 @@ echo ============================================================
 echo Ruten to Kapaipai Workflow
 echo ============================================================
 echo [1] Export Ruten store products to Excel
-echo [2] Generate Kapaipai upload preview
-echo [3] Start Kapaipai upload
+echo [2] Create Kapaipai preview and skipped-items report
+echo [3] Upload products to Kapaipai
 echo [Q] Quit
 echo.
 choice /c 123Q /n /m "Select an option: "
@@ -44,19 +44,19 @@ goto menu
 
 :preview
 cls
-echo [Case 2] Generate Kapaipai upload preview
+echo [Case 2] Create Kapaipai preview and skipped-items report
 echo.
 set "INPUT_FILE="
 set /p "INPUT_FILE=Enter or drag the Ruten Excel path here, or press Enter to use the latest file: "
 set "INPUT_FILE=%INPUT_FILE:"=%"
 call :run_python "kapaipai_uploader.py" --input "%INPUT_FILE%"
 set "RUN_RESULT=%ERRORLEVEL%"
-call :show_result "Preview generation"
+call :show_result "Kapaipai preview and skipped-items report"
 goto menu
 
 :upload
 cls
-echo [Case 3] Start Kapaipai upload
+echo [Case 3] Upload products to Kapaipai
 echo.
 set "INPUT_FILE="
 set /p "INPUT_FILE=Enter or drag the Ruten Excel path here, or press Enter to use the latest file: "

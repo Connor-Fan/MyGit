@@ -43,12 +43,21 @@ HEADER_ALIASES = {
     "quantity": ("Quantity", "Stock", "\u6578\u91cf", "\u5eab\u5b58", "\u4ef6\u6578"),
     "price": ("Price", "Sale Price", "\u50f9\u683c", "\u552e\u50f9", "\u5546\u54c1\u50f9\u683c"),
 }
-CARD_CODE_RE = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{2,12})[-\u2010\u2011\u2012\u2013\u2014](JP\d{3,4})(?![A-Z0-9])", re.I)
+CARD_SET_PATTERN = (
+    r"(?=[A-Z0-9]{2,12}(?:[\uff08(][^()\uff08\uff09]+[)\uff09])?"
+    r"[-\u2010\u2011\u2012\u2013\u2014])(?=[A-Z0-9]*[A-Z])[A-Z0-9]{2,12}"
+)
+CARD_NUMBER_PATTERN = r"(?:[A-Z]{1,4}\d{1,4}|\d{1,4})"
+CARD_CODE_RE = re.compile(
+    rf"(?<![A-Z0-9])({CARD_SET_PATTERN})[-\u2010\u2011\u2012\u2013\u2014]"
+    rf"({CARD_NUMBER_PATTERN})(?![A-Z0-9])",
+    re.I,
+)
 CONSIGNOR_RE = re.compile(r"\u5bc4\u8ce3\s*[:\uff1a]\s*([A-Za-z0-9\u3400-\u9fff]+)", re.I)
 PRICE_RE = re.compile(r"-?\d+(?:\.\d+)?")
 RESULT_RARITY_RE = re.compile(r"^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 PARENTHESIZED_RE = re.compile(r"[\uff08(]([^()\uff08\uff09]*)[)\uff09]")
-PROGRAM_VERSION = "2026.08.22-unified-19-search-ui-reload"
+PROGRAM_VERSION = "2026.08.23-unified-26-english-skip-reasons"
 LOGIN_SETTLE_MS = 5000
 SEARCH_UI_TIMEOUT_SECONDS = 30
 SEARCH_MAX_ATTEMPTS = 3
@@ -61,6 +70,37 @@ GAME_FILTER_NAMES = {
     "NivelArena", "\u95c7\u5f71\u8a69\u7ae0\u65e5\u6587", "\u6392\u7403\u5c11\u5e74\u65e5\u6587", "\u5e7b\u7378\u5e15\u9b6f\u65e5\u6587",
     "\u8d85\u82f1\u64ca\u6230\u82f1\u6587", "\u5468\u908a", "FIFA\u6536\u85cf",
 }
+SKIPPED_REPORT_STATUSES = {
+    "Preview validation failed",
+    "Manual listing required",
+    "Search result mismatch",
+    "Card not found",
+}
+JAPANESE_CARD_NUMBER_RE = re.compile(r"^(?:J[A-Z]{1,3}\d{1,4}|\d{1,4})$", re.I)
+UNSUPPORTED_YGO_MARKERS = (
+    ("\u7121\u6a19", "Unnumbered"),
+    ("\u4e9e\u82f1", "Asian-English"),
+    ("\u7f8e\u82f1", "American-English"),
+    ("\u6b50\u82f1", "European-English"),
+    ("\u65e5\u82f1", "Japanese-English"),
+    ("\u82f1\u7d19", "English"),
+    ("\u7f8e\u7d19", "American-English"),
+    ("\u6b50\u7d19", "European-English"),
+    ("\u82f1\u7248", "English"),
+    ("\u82f1\u6587", "English"),
+    ("\u97d3\u7d19", "Korean"),
+    ("\u97d3\u7248", "Korean"),
+    ("\u97d3\u6587", "Korean"),
+    ("\u7c21\u4e2d", "Chinese"),
+    ("\u7e41\u4e2d", "Chinese"),
+    ("\u4e2d\u6587\u7248", "Chinese"),
+    ("\u4e2d\u6587\u5361", "Chinese"),
+    ("\u5fb7\u6587", "German"),
+    ("\u6cd5\u6587", "French"),
+    ("\u7fa9\u5927\u5229\u6587", "Italian"),
+    ("\u897f\u73ed\u7259\u6587", "Spanish"),
+    ("\u8461\u8404\u7259\u6587", "Portuguese"),
+)
 @dataclass
 class Listing:
     row: int
@@ -155,6 +195,22 @@ def normalize_for_match(value: Any) -> str:
 def normalize_code(value: str) -> str:
     match = CARD_CODE_RE.search(value.upper())
     return f"{match.group(1)}-{match.group(2)}" if match else ""
+
+
+def unsupported_ygo_reason(name: str, card_code: str) -> str:
+    """Return a short user-facing reason for unsupported card editions."""
+    normalized_name = unicodedata.normalize("NFKC", clean(name))
+    number = card_code.rsplit("-", 1)[-1].upper()
+    if number.startswith("AE"):
+        return "Asian-English cards are not supported. Please handle manually."
+    if number.startswith("EN"):
+        return "American-English cards are not supported. Please handle manually."
+    for marker, label in UNSUPPORTED_YGO_MARKERS:
+        if marker in normalized_name:
+            return f"{label} cards are not supported. Please handle manually."
+    if not JAPANESE_CARD_NUMBER_RE.fullmatch(number):
+        return "This is not a Japanese card. Please handle manually."
+    return ""
 
 
 def parse_positive_int(value: Any, field: str, row: int) -> int:
@@ -284,26 +340,55 @@ def read_listings(path: Path, config: dict[str, Any]) -> tuple[list[Listing], li
         name = clean(name_cell.value)
         if not name:
             continue
-        if "\u904a\u6232\u738b" not in name and not normalize_code(name):
-            skipped.append({"row": row, "name": name, "reason": "Not a recognizable Yu-Gi-Oh! product"})
+        source_url = name_cell.hyperlink.target if name_cell.hyperlink else ""
+        source_quantity = sheet.cell(row, columns["quantity"]).value
+        source_price = sheet.cell(row, columns["price"]).value
+        card_code = normalize_code(name)
+        if not card_code:
+            skipped.append({
+                "row": row,
+                "name": name,
+                "reason": "No set-number card code was found. This may be merchandise.",
+                "quantity": source_quantity,
+                "price": source_price,
+                "source_url": source_url,
+            })
+            continue
+        unsupported_reason = unsupported_ygo_reason(name, card_code)
+        if unsupported_reason:
+            skipped.append({
+                "row": row,
+                "name": name,
+                "reason": unsupported_reason,
+                "quantity": source_quantity,
+                "price": source_price,
+                "source_url": source_url,
+            })
             continue
         try:
             listing = parse_listing(
                 row,
                 name,
-                sheet.cell(row, columns["quantity"]).value,
-                sheet.cell(row, columns["price"]).value,
-                name_cell.hyperlink.target if name_cell.hyperlink else "",
+                source_quantity,
+                source_price,
+                source_url,
                 config,
             )
             listings.append(listing)
         except ValueError as error:
-            skipped.append({"row": row, "name": name, "reason": str(error)})
+            skipped.append({
+                "row": row,
+                "name": name,
+                "reason": str(error),
+                "quantity": source_quantity,
+                "price": source_price,
+                "source_url": source_url,
+            })
     workbook.close()
     return listings, skipped
 
 
-def write_preview(source: Path, listings: list[Listing], skipped: list[dict[str, Any]]) -> Path:
+def write_preview(source: Path, listings: list[Listing]) -> Path:
     output = source.with_name(f"{source.stem}_kapaipai_preview.xlsx")
     workbook = Workbook()
     sheet = workbook.active
@@ -343,10 +428,6 @@ def write_preview(source: Path, listings: list[Listing], skipped: list[dict[str,
             alt_cell = sheet.cell(sheet.max_row, headers.index("Alternate Art") + 1)
             alt_cell.font = Font(bold=True, color="9C0006")
             alt_cell.fill = PatternFill("solid", fgColor="FFC7CE")
-    skip_sheet = workbook.create_sheet("Skipped Items")
-    skip_sheet.append(["Source Row", "Product Name", "Reason"])
-    for item in skipped:
-        skip_sheet.append([item["row"], item["name"], item["reason"]])
     for current in workbook.worksheets:
         for cell in current[1]:
             cell.font = Font(bold=True, color="FFFFFF")
@@ -739,7 +820,10 @@ def looks_like_card_code(value: str) -> bool:
     normalized = clean(value).upper()
     if CARD_CODE_RE.search(normalized):
         return True
-    return bool(re.fullmatch(r"[A-Z0-9]{2,12}(?:[\uff08(][^()\uff08\uff09]+[)\uff09])?-JP\d{3,4}", normalized))
+    return bool(re.fullmatch(
+        rf"{CARD_SET_PATTERN}(?:[\uff08(][^()\uff08\uff09]+[)\uff09])?-{CARD_NUMBER_PATTERN}",
+        normalized,
+    ))
 
 
 def is_rarity_label(value: str) -> bool:
@@ -842,8 +926,8 @@ def choose_search_result(item: Listing, candidates: list[SearchResultCandidate])
 def displayed_search_result_codes(page: Page) -> list[str]:
     """Return visible Kapaipai result codes for mismatch diagnostics."""
     pattern = re.compile(
-        r"^[A-Z0-9]{2,12}(?:[\uff08(][^()\uff08\uff09]+[)\uff09])?-(?:JP)?\d{3,4}"
-        r"(?:[\uff08(]\u7570\u5716[^()\uff08\uff09]*[)\uff09])?$",
+        rf"^{CARD_SET_PATTERN}(?:[\uff08(][^()\uff08\uff09]+[)\uff09])?-{CARD_NUMBER_PATTERN}"
+        rf"(?:[\uff08(]\u7570\u5716[^()\uff08\uff09]*[)\uff09])?$",
         re.I,
     )
     try:
@@ -1791,6 +1875,151 @@ def progress_path(source: Path) -> Path:
     return source.with_name(f"{source.stem}_kapaipai_progress.json")
 
 
+def skipped_report_path(source: Path) -> Path:
+    return source.with_name(f"{source.stem}_kapaipai_skipped.xlsx")
+
+
+def latest_skipped_records(
+    progress: dict[str, Any],
+    preview_skipped: Iterable[dict[str, Any]] = (),
+) -> list[dict[str, Any]]:
+    """Return the latest skipped state per source row."""
+    latest_by_row: dict[int, dict[str, Any]] = {}
+    for record in preview_skipped:
+        row = record.get("row")
+        if row is None:
+            continue
+        try:
+            latest_by_row[int(row)] = {
+                **record,
+                "card_code": normalize_code(clean(record.get("name"))) or "",
+                "status": "Preview validation failed",
+                "message": clean(record.get("reason")),
+                "time": "",
+            }
+        except (TypeError, ValueError):
+            continue
+    for record in progress.get("items", []):
+        row = record.get("row")
+        if row is None:
+            continue
+        try:
+            latest_by_row[int(row)] = record
+        except (TypeError, ValueError):
+            continue
+    return sorted(
+        (
+            record for record in latest_by_row.values()
+            if record.get("status") in SKIPPED_REPORT_STATUSES
+        ),
+        key=lambda record: int(record["row"]),
+    )
+
+
+def user_friendly_skip_reason(record: dict[str, Any]) -> str:
+    status = clean(record.get("status"))
+    if status == "Preview validation failed":
+        return clean(record.get("message")) or "Preview validation failed. Please check the product data."
+    if status == "Manual listing required":
+        return "Multiple artworks were found. Please list manually."
+    if status == "Search result mismatch":
+        return "The displayed card does not match the product. Skipped."
+    if status == "Card not found":
+        return "No matching card was found on Kapaipai."
+    return clean(record.get("message"))
+
+
+def write_skipped_report(
+    source: Path,
+    progress: dict[str, Any],
+    preview_skipped: Iterable[dict[str, Any]] = (),
+) -> Path:
+    output = skipped_report_path(source)
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Skipped Items"
+    headers = [
+        "Source Row",
+        "Card Code",
+        "Product Name",
+        "Skip Type",
+        "Reason",
+        "Quantity",
+        "Price",
+        "Source URL",
+        "Time",
+    ]
+    sheet.append(headers)
+    status_colors = {
+        "Preview validation failed": "D9EAF7",
+        "Manual listing required": "FCE4D6",
+        "Search result mismatch": "FFC7CE",
+        "Card not found": "FFF2CC",
+    }
+    for record in latest_skipped_records(progress, preview_skipped):
+        sheet.append([
+            record.get("row"),
+            record.get("card_code", ""),
+            record.get("name", ""),
+            record.get("status", ""),
+            user_friendly_skip_reason(record),
+            record.get("quantity", ""),
+            record.get("price", ""),
+            record.get("source_url", ""),
+            record.get("time", ""),
+        ])
+        row_number = sheet.max_row
+        status = clean(record.get("status"))
+        sheet.cell(row_number, 4).fill = PatternFill(
+            "solid",
+            fgColor=status_colors.get(status, "FFFFFF"),
+        )
+        source_url = clean(record.get("source_url"))
+        if source_url:
+            name_cell = sheet.cell(row_number, 3)
+            name_cell.hyperlink = source_url
+            name_cell.style = "Hyperlink"
+
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="333333")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    for column in range(1, sheet.max_column + 1):
+        width = max(
+            (len(clean(sheet.cell(row, column).value)) for row in range(1, sheet.max_row + 1)),
+            default=8,
+        ) + 2
+        sheet.column_dimensions[get_column_letter(column)].width = min(max(width, 10), 60)
+    for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+    temp = output.with_name(f"{output.stem}.tmp{output.suffix}")
+    workbook.save(temp)
+    workbook.close()
+    temp.replace(output)
+    return output
+
+
+def refresh_skipped_report(
+    source: Path,
+    progress: dict[str, Any],
+    preview_skipped: Iterable[dict[str, Any]] = (),
+) -> Path:
+    """Update the report without stopping an upload when Excel has it locked."""
+    output = skipped_report_path(source)
+    try:
+        return write_skipped_report(source, progress, preview_skipped)
+    except OSError as error:
+        print(
+            f"Warning: the skipped-items report could not be updated: {error}. "
+            "Close the Excel file so the next update can succeed."
+        )
+        return output
+
+
 def diagnostic_control_inventory(page: Page) -> str:
     lines: list[str] = []
     edit_panel = full_edit_panel(page)
@@ -1879,11 +2108,19 @@ def save_diagnostic(page: Page, source: Path, item: Listing, stage: str, error: 
     return path
 
 
-def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], args: argparse.Namespace) -> None:
+def run_upload(
+    source: Path,
+    listings: list[Listing],
+    config: dict[str, Any],
+    args: argparse.Namespace,
+    preview_skipped: Iterable[dict[str, Any]] = (),
+) -> None:
     if sync_playwright is None:
         raise RuntimeError("Playwright is not installed. Run: py -m pip install -r requirements.txt")
+    preview_skipped = tuple(preview_skipped)
     state_path = progress_path(source)
     progress = load_progress(state_path)
+    report_path = refresh_skipped_report(source, progress, preview_skipped)
     completed = {int(row) for row in progress.get("completed_rows", [])}
     manual_rows = {int(row) for row in progress.get("manual_rows", [])}
     mismatch_rows = {int(row) for row in progress.get("mismatch_rows", [])}
@@ -1915,6 +2152,7 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
         f"{len(mismatch_rows)} skipped for result mismatch; "
         f"{len(queue)} queued for this run."
     )
+    print(f"Skipped-items report: {report_path}")
     if not queue:
         print("There are no products waiting to be listed.")
         return
@@ -1954,6 +2192,7 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
                         "verified_fields": True,
                     })
                     save_progress(state_path, progress)
+                    report_path = refresh_skipped_report(source, progress, preview_skipped)
                     print(
                         f"Completed: {item.card_code} {rarity}, price {item.price}, "
                         f"quantity {item.quantity}."
@@ -1986,6 +2225,7 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
                         "verified_fields": False,
                     })
                     save_progress(state_path, progress)
+                    report_path = refresh_skipped_report(source, progress, preview_skipped)
                     print(f"Skipped for manual listing: {error}")
                     continue
                 except SearchResultMismatch as error:
@@ -2000,6 +2240,7 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
                         "verified_fields": False,
                     })
                     save_progress(state_path, progress)
+                    report_path = refresh_skipped_report(source, progress, preview_skipped)
                     print(f"Skipped because the displayed card did not match: {error}")
                     continue
                 except CardNotFound as error:
@@ -2012,6 +2253,7 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
                         "verified_fields": False,
                     })
                     save_progress(state_path, progress)
+                    report_path = refresh_skipped_report(source, progress, preview_skipped)
                     print(f"Skipped because the card was not found: {error}")
                     continue
                 except NeedsManualInput as error:
@@ -2056,6 +2298,7 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
             except subprocess.TimeoutExpired:
                 pass
     print(f"\nProgress file: {state_path}")
+    print(f"Skipped-items report: {report_path}")
 
 
 def resolve_input(raw: str | None) -> Path:
@@ -2063,21 +2306,28 @@ def resolve_input(raw: str | None) -> Path:
         path = Path(raw.strip().strip('"')).expanduser()
         if not path.exists():
             raise FileNotFoundError(f"Excel workbook not found: {path}")
-        preview_suffix = "_kapaipai_preview"
-        if path.stem.endswith(preview_suffix):
-            original = path.with_name(f"{path.stem[:-len(preview_suffix)]}{path.suffix}")
-            if not original.exists():
-                raise FileNotFoundError(
-                    "A Kapaipai preview workbook was selected, but its original Ruten workbook "
-                    f"was not found in the same folder: {original.name}"
-                )
-            print(f"Preview workbook detected. Using the original Ruten workbook: {original.name}")
-            path = original
+        for generated_suffix, label in (
+            ("_kapaipai_preview", "Preview"),
+            ("_kapaipai_skipped", "Skipped-items report"),
+        ):
+            if path.stem.endswith(generated_suffix):
+                original = path.with_name(f"{path.stem[:-len(generated_suffix)]}{path.suffix}")
+                if not original.exists():
+                    raise FileNotFoundError(
+                        f"A Kapaipai {label.lower()} workbook was selected, but its original "
+                        f"Ruten workbook was not found in the same folder: {original.name}"
+                    )
+                print(f"{label} workbook detected. Using the original Ruten workbook: {original.name}")
+                path = original
+                break
         return path.resolve()
     preferred = list(Path.cwd().glob("ruten_products_*.xlsx"))
     fallback = list(Path.cwd().glob("*.xlsx"))
     candidates = sorted(
-        {path for path in [*preferred, *fallback] if not path.stem.endswith("_kapaipai_preview")},
+        {
+            path for path in [*preferred, *fallback]
+            if not path.stem.endswith(("_kapaipai_preview", "_kapaipai_skipped"))
+        },
         key=lambda path: (path not in preferred, -path.stat().st_mtime),
     )
     if not candidates:
@@ -2123,16 +2373,17 @@ def main() -> int:
                 if not listings:
                     raise RuntimeError("The Excel workbook contains no processable Yu-Gi-Oh! products.")
                 if not args.execute:
-                    preview = write_preview(source, listings, skipped)
+                    preview = write_preview(source, listings)
+                    report = write_skipped_report(source, {"items": []}, skipped)
                     unresolved = sum(not item.rarity for item in listings)
                     print(f"Preview created: {preview}")
+                    print(f"Skipped-items report: {report}")
                     print(
                         f"Processable: {len(listings)}; unresolved rarity: {unresolved}; "
-                        f"skipped: {len(skipped)}."
+                        f"preview validation failed: {len(skipped)}."
                     )
-                    print("Use --execute only after reviewing the preview.")
                     return 0
-                run_upload(source, listings, config, args)
+                run_upload(source, listings, config, args, skipped)
                 return 0
             except KeyboardInterrupt:
                 print("\nStopped by the user.")

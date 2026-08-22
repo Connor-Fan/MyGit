@@ -17,8 +17,8 @@ This package combines the Ruten exporter, Kapaipai preview generator, and Kapaip
 ## Menu
 
 - Case 1 asks for a Ruten store URL, then exports all public products from that store to `ruten_products_YYYYMMDD.xlsx`.
-- Case 2 reads a Ruten workbook and creates `*_kapaipai_preview.xlsx`.
-- Case 3 reads a Ruten workbook and starts the automatic Kapaipai upload workflow.
+- Case 2 reads a Ruten workbook and creates the Kapaipai preview and skipped-items report.
+- Case 3 reads a Ruten workbook and uploads products to Kapaipai.
 
 Case 3 uses the following listing sequence:
 
@@ -30,6 +30,8 @@ Case 3 uses the following listing sequence:
 
 If an existing listing is detected, the workflow reuses its full-edit action or active inline editor instead of creating a duplicate. Newly created products continue through Full Edit even when Kapaipai also displays inline controls. A card that is not found is recorded and skipped. Any error after a card is found, including product creation, full edit, field entry, or saving, stops the entire upload immediately, writes diagnostic files, returns an error code, and leaves the batch window paused.
 
+Cases 2 and 3 create one shared `*_kapaipai_skipped.xlsx` report. Preview-validation failures, products that require manual listing, mismatched search results, and cards that cannot be found are all recorded there instead of duplicating a `Skipped Items` worksheet inside the preview workbook. The report contains the source row, card code, product name, skip type, reason, quantity, price, source URL, and time. It is refreshed after every status change, keeps only the latest status for each source row, and removes a product after a later retry lists it successfully. Close the report in Excel while an upload is running so Windows can replace it; a locked report produces a warning but does not stop the upload.
+
 Kapaipai may keep an existing listing's inline editor open after Save Changes succeeds. In that state, the workflow verifies the saved price, listed quantity, and note, and accepts the update only when the Save Changes control has become inactive. This avoids reporting a successful existing-listing update as a submission failure while still rejecting an enabled, unverified save state.
 
 After a card page opens, the workflow waits for either Full Edit or Add Product. This handles the short reload period after consecutive rows reference the same card: a delayed existing listing is reused instead of being misreported as a missing add-product control.
@@ -39,6 +41,8 @@ Some cards have a zero quick-listing price when Kapaipai has no market price. Be
 Kapaipai may replace a button in the DOM immediately after a successful click. For Add Product, Full Edit, and Save Changes, the workflow verifies the expected resulting UI state before deciding whether the action failed. This prevents a successful action from being reported as a timeout while preserving the immediate stop behavior for unverified upload errors.
 
 Category selection and card search are verified together and retried up to three times. The result matcher accepts both normal card codes such as `AGOV-JP002` and Kapaipai catalog-qualified codes such as `AGOV(1202)-JP002`. Only three failed verification rounds stop the workflow.
+
+Every processable card must contain a set code and card number connected by a hyphen. Official Japanese variants such as `BLZD-JPS06`, `20CP-JPC04`, `15AX-JPY52`, `DS14-JPL28`, `NCF1-JPP01`, `DUEA-JA045`, and legacy numeric forms such as `EE3-147` and `RB-60` are supported. Merchandise without a hyphenated card code is excluded. Card-number sections beginning with `AE` are treated as Asian English, and sections beginning with `EN` are treated as American English even when the title does not state the edition. Unnumbered, non-Japanese, and unsupported-language cards are written to the skipped-items report with short user-facing English reasons.
 
 Duplicate DOM labels for the same visible card code, rarity, and artwork are collapsed before version selection. Zero quick-listing prices are detected from either an input value or the visible price stepper, so text-only `$0` controls are initialized before Add Product is clicked.
 
@@ -72,6 +76,7 @@ The Python source, batch menu, logs, diagnostic labels, generated filenames, and
 - `*_kapaipai_preview.xlsx`
 - `*_kapaipai_upload.log`
 - `*_kapaipai_progress.json`
+- `*_kapaipai_skipped.xlsx`
 - `kapaipai_diagnostics\` when a browser interaction fails
 
 The browser login profile is created locally in `.kapaipai_chrome_profile` during Case 3. It is intentionally not included in this package.

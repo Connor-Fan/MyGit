@@ -38,7 +38,9 @@ from kapaipai_uploader import (
     kapaipai_result_code_pattern,
     looks_like_card_code,
     load_config,
+    latest_skipped_records,
     missing_search_result_error,
+    normalize_code,
     open_full_edit,
     parenthesized_rarity_text,
     parse_listing,
@@ -57,6 +59,7 @@ from kapaipai_uploader import (
     wait_for_search_interface,
     wait_for_listing_controls,
     write_preview,
+    write_skipped_report,
 )
 
 
@@ -111,9 +114,13 @@ class ParserTests(unittest.TestCase):
             "\u96f7\u5c04": "HR",
             "\u7d05\u4eae": "UR",
             "\u85cd\u4eae": "UR",
+            "\u85cd\u947d": "SER",
             "\u534a\u947d\u788e\u947d": "SEPR",
             "\u91d1\u4eae\u788e\u947d": "UPR",
             "\u4eae\u9762\u788e\u947d": "SPR",
+            "\u534a\u947d\u5168\u947d": "SEPR",
+            "\u91d1\u4eae\u5168\u947d": "UPR",
+            "\u4eae\u9762\u5168\u947d": "SPR",
         }
         for hint, expected in cases.items():
             with self.subTest(hint=hint):
@@ -157,6 +164,15 @@ class ParserTests(unittest.TestCase):
             preview.touch()
             self.assertEqual(resolve_input(str(preview)), original.resolve())
 
+    def test_skipped_report_input_resolves_to_original_workbook(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            original = root / "ruten_products_20260811.xlsx"
+            report = root / "ruten_products_20260811_kapaipai_skipped.xlsx"
+            original.touch()
+            report.touch()
+            self.assertEqual(resolve_input(str(report)), original.resolve())
+
     def test_kapaipai_catalog_qualified_card_code(self):
         pattern = kapaipai_result_code_pattern("AGOV-JP002")
         self.assertRegex("AGOV-JP002", pattern)
@@ -164,6 +180,23 @@ class ParserTests(unittest.TestCase):
         self.assertRegex("AGOV(1202)-JP002", pattern)
         self.assertRegex("AGOV\uff081202\uff09-JP002", pattern)
         self.assertNotRegex("AGOV(1202)-JP003", pattern)
+
+    def test_extended_yugioh_card_code_formats(self):
+        codes = [
+            "BLZD-JPS06",
+            "BPRO-JPS07",
+            "20CP-JPC04",
+            "15AX-JPY52",
+            "DS14-JPL28",
+            "NCF1-JPP01",
+            "DUEA-JA045",
+            "EE3-147",
+        ]
+        for code in codes:
+            with self.subTest(code=code):
+                self.assertEqual(normalize_code(f"\u904a\u6232\u738b {code} test"), code)
+                self.assertTrue(looks_like_card_code(code))
+                self.assertRegex(code, kapaipai_result_code_pattern(code))
 
     def test_kapaipai_card_code_accepts_named_artwork_variants(self):
         pattern = kapaipai_result_code_pattern("SD47-JP001")
@@ -321,6 +354,8 @@ class ParserTests(unittest.TestCase):
             "TW03-052",
             "20AP-JP087",
             "DUEA(901)-JP053",
+            "BLZD-JPS17",
+            "EE3-147",
             "TW03-054",
         ])
         item = Listing(
@@ -338,7 +373,14 @@ class ParserTests(unittest.TestCase):
 
         self.assertEqual(
             displayed_search_result_codes(page),
-            ["TW03-052", "20AP-JP087", "DUEA(901)-JP053", "TW03-054"],
+            [
+                "TW03-052",
+                "20AP-JP087",
+                "DUEA(901)-JP053",
+                "BLZD-JPS17",
+                "EE3-147",
+                "TW03-054",
+            ],
         )
         with patch("kapaipai_uploader.current_game_filter", return_value="\u904a\u6232\u738b\u65e5\u6587"):
             error = missing_search_result_error(
@@ -457,14 +499,113 @@ class ParserTests(unittest.TestCase):
                 "",
                 self.config,
             )
-            preview = write_preview(source, [item], [])
+            preview = write_preview(source, [item])
             workbook = load_workbook(preview, data_only=True)
+            self.assertEqual(workbook.sheetnames, ["Upload Preview"])
             sheet = workbook["Upload Preview"]
             headers = [cell.value for cell in sheet[1]]
             self.assertIn("Alternate Art", headers)
             alt_cell = sheet.cell(2, headers.index("Alternate Art") + 1)
             self.assertEqual(alt_cell.value, "Yes")
             self.assertEqual(alt_cell.fill.fgColor.rgb, "00FFC7CE")
+            workbook.close()
+
+    def test_skipped_report_uses_latest_status_per_row(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "ruten_products_20260820.xlsx"
+            preview_skipped = [
+                {
+                    "row": 6,
+                    "name": "Invalid source product",
+                    "reason": "A Yu-Gi-Oh! card code was not found.",
+                    "quantity": 1,
+                    "price": 20,
+                    "source_url": "https://www.ruten.com.tw/item/show?invalid",
+                }
+            ]
+            progress = {
+                "items": [
+                    {
+                        "row": 2,
+                        "card_code": "OLD-JP001",
+                        "name": "Previously missing",
+                        "status": "Card not found",
+                        "message": "Missing before retry",
+                        "quantity": 1,
+                        "price": 5,
+                        "source_url": "https://www.ruten.com.tw/item/show?old",
+                        "time": "2026-08-22T01:00:00",
+                    },
+                    {
+                        "row": 2,
+                        "card_code": "OLD-JP001",
+                        "name": "Previously missing",
+                        "status": "Listed",
+                        "message": "Listed after retry",
+                        "quantity": 1,
+                        "price": 5,
+                        "source_url": "https://www.ruten.com.tw/item/show?old",
+                        "time": "2026-08-22T01:05:00",
+                    },
+                    {
+                        "row": 3,
+                        "card_code": "SD47-JP001",
+                        "name": "Multiple artworks",
+                        "status": "Manual listing required",
+                        "message": "Multiple artwork variants",
+                        "quantity": 1,
+                        "price": 5,
+                        "source_url": "https://www.ruten.com.tw/item/show?manual",
+                        "time": "2026-08-22T01:10:00",
+                    },
+                    {
+                        "row": 4,
+                        "card_code": "TW03-JP053",
+                        "name": "Mismatched result",
+                        "status": "Search result mismatch",
+                        "message": "Displayed another card",
+                        "quantity": 2,
+                        "price": 5,
+                        "source_url": "https://www.ruten.com.tw/item/show?mismatch",
+                        "time": "2026-08-22T01:15:00",
+                    },
+                    {
+                        "row": 5,
+                        "card_code": "MISS-JP001",
+                        "name": "Missing card",
+                        "status": "Card not found",
+                        "message": "Kapaipai did not find the card",
+                        "quantity": 1,
+                        "price": 10,
+                        "source_url": "https://www.ruten.com.tw/item/show?missing",
+                        "time": "2026-08-22T01:20:00",
+                    },
+                ]
+            }
+
+            records = latest_skipped_records(progress, preview_skipped)
+            self.assertEqual([record["row"] for record in records], [3, 4, 5, 6])
+
+            output = write_skipped_report(source, progress, preview_skipped)
+            self.assertEqual(output.name, "ruten_products_20260820_kapaipai_skipped.xlsx")
+            workbook = load_workbook(output)
+            sheet = workbook["Skipped Items"]
+            self.assertEqual(sheet.max_row, 5)
+            self.assertEqual(
+                [sheet.cell(row, 1).value for row in range(2, 6)],
+                [3, 4, 5, 6],
+            )
+            self.assertEqual(sheet.cell(2, 4).value, "Manual listing required")
+            self.assertEqual(sheet.cell(3, 4).value, "Search result mismatch")
+            self.assertEqual(sheet.cell(4, 4).value, "Card not found")
+            self.assertEqual(sheet.cell(5, 4).value, "Preview validation failed")
+            self.assertEqual(sheet.cell(2, 5).value, "Multiple artworks were found. Please list manually.")
+            self.assertEqual(sheet.cell(3, 5).value, "The displayed card does not match the product. Skipped.")
+            self.assertEqual(sheet.cell(4, 5).value, "No matching card was found on Kapaipai.")
+            self.assertEqual(
+                sheet.cell(3, 3).hyperlink.target,
+                "https://www.ruten.com.tw/item/show?mismatch",
+            )
             workbook.close()
 
     def test_rarity_selection_is_automatic(self):
@@ -1158,6 +1299,7 @@ class ParserTests(unittest.TestCase):
             patch("kapaipai_uploader.is_logged_in", return_value=True),
             patch("kapaipai_uploader.load_progress", return_value={"completed_rows": [], "items": []}),
             patch("kapaipai_uploader.save_progress"),
+            patch("kapaipai_uploader.refresh_skipped_report", return_value=Path("skipped.xlsx")),
             patch("kapaipai_uploader.search_and_open", return_value="NPR") as search,
             patch("kapaipai_uploader.submit_listing", side_effect=NeedsManualInput("simulated failure")),
             patch("kapaipai_uploader.save_diagnostic", return_value=Path("diagnostic.txt")),
@@ -1206,6 +1348,7 @@ class ParserTests(unittest.TestCase):
             patch("kapaipai_uploader.is_logged_in", return_value=True),
             patch("kapaipai_uploader.load_progress", return_value={"completed_rows": [], "items": []}),
             patch("kapaipai_uploader.save_progress"),
+            patch("kapaipai_uploader.refresh_skipped_report", return_value=Path("skipped.xlsx")),
             patch(
                 "kapaipai_uploader.search_and_open",
                 side_effect=[CardNotFound("missing card"), "NPR"],
@@ -1229,6 +1372,29 @@ class ParserTests(unittest.TestCase):
             self.assertEqual(len(listings), 1)
             self.assertFalse(skipped)
             self.assertEqual(listings[0].note, "\u65e5\u7d19\uff5c95\uff5e97\u5206\uff5c\u5bc4\u8ce3:\u9673")
+
+    def test_read_workbook_accepts_hyphenated_japanese_codes_only(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "input.xlsx"
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "Products"
+            sheet.append(["Product Name", "Quantity", "Price"])
+            sheet.append(["\u904a\u6232\u738b RB-60 \u5fc3\u8b8a (\u91d1\u4eae)", 1, 30])
+            sheet.append(["\u904a\u6232\u738b QCTB \u7cbe\u7f8e\u9396\u5319\u6263 \u9470\u5319\u5708", 1, 10])
+            sheet.append(["\u904a\u6232\u738b VOL2-37 \u7121\u6a19 \u9b54\u88dd\u9a0e\u58eb (\u666e\u5361)", 1, 5])
+            sheet.append(["\u904a\u6232\u738b SDRB-AEP09 \u6708\u83ef\u9f8d (\u4eae\u9762)", 1, 10])
+            sheet.append(["\u904a\u6232\u738b PHRA-EN099 \u96fb\u8166\u754c\u59ec (\u4eae\u9762)", 1, 10])
+            workbook.save(path)
+
+            listings, skipped = read_listings(path, self.config)
+
+            self.assertEqual([item.card_code for item in listings], ["RB-60"])
+            self.assertEqual(len(skipped), 4)
+            self.assertEqual(skipped[0]["reason"], "No set-number card code was found. This may be merchandise.")
+            self.assertEqual(skipped[1]["reason"], "Unnumbered cards are not supported. Please handle manually.")
+            self.assertEqual(skipped[2]["reason"], "Asian-English cards are not supported. Please handle manually.")
+            self.assertEqual(skipped[3]["reason"], "American-English cards are not supported. Please handle manually.")
 
 
 if __name__ == "__main__":
