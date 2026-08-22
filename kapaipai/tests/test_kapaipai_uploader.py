@@ -9,12 +9,14 @@ from openpyxl import Workbook, load_workbook
 
 from kapaipai_uploader import (
     CardNotFound,
+    GameFilterError,
     Listing,
     ListingEditTarget,
     ManualListingRequired,
     NeedsManualInput,
     PlaywrightError,
     PlaywrightTimeoutError,
+    SearchResultMismatch,
     SearchResultCandidate,
     adjust_stepper,
     build_note,
@@ -26,6 +28,7 @@ from kapaipai_uploader import (
     custom_game_filter_trigger,
     deduplicate_search_results,
     detect_alt_art,
+    displayed_search_result_codes,
     ensure_ygo_filter,
     ensure_inline_edit_note,
     ensure_inline_stock_capacity,
@@ -35,6 +38,7 @@ from kapaipai_uploader import (
     kapaipai_result_code_pattern,
     looks_like_card_code,
     load_config,
+    missing_search_result_error,
     open_full_edit,
     parenthesized_rarity_text,
     parse_listing,
@@ -44,6 +48,7 @@ from kapaipai_uploader import (
     run_upload,
     save_inline_edit,
     save_full_edit,
+    search_and_open,
     set_price,
     set_full_edit_number,
     stepper_button,
@@ -106,6 +111,9 @@ class ParserTests(unittest.TestCase):
             "\u96f7\u5c04": "HR",
             "\u7d05\u4eae": "UR",
             "\u85cd\u4eae": "UR",
+            "\u534a\u947d\u788e\u947d": "SEPR",
+            "\u91d1\u4eae\u788e\u947d": "UPR",
+            "\u4eae\u9762\u788e\u947d": "SPR",
         }
         for hint, expected in cases.items():
             with self.subTest(hint=hint):
@@ -305,6 +313,97 @@ class ParserTests(unittest.TestCase):
         normal = Listing(3, "normal", 1, 20, "PAC1-JP018", "\u534a\u947d", "SER", "", "", "95\uff5e97\u5206")
         self.assertEqual(choose_search_result(alt, candidates).code_text, "PAC1-018(\u7570\u5716)")
         self.assertEqual(choose_search_result(normal, candidates).code_text, "PAC1-018")
+
+    def test_mismatched_visible_results_are_skipped_instead_of_category_failure(self):
+        page = Mock()
+        page.locator.return_value.inner_text.return_value = "\n".join([
+            "\u641c\u5c0b",
+            "TW03-052",
+            "20AP-JP087",
+            "DUEA(901)-JP053",
+            "TW03-054",
+        ])
+        item = Listing(
+            3036,
+            "\u904a\u6232\u738b TW03-JP053 \u5967\u7c73\u52a0\u661f\u8056 (\u666e\u947d)",
+            2,
+            5,
+            "TW03-JP053",
+            "\u666e\u947d",
+            "NPR",
+            "",
+            "",
+            "95\uff5e97\u5206",
+        )
+
+        self.assertEqual(
+            displayed_search_result_codes(page),
+            ["TW03-052", "20AP-JP087", "DUEA(901)-JP053", "TW03-054"],
+        )
+        with patch("kapaipai_uploader.current_game_filter", return_value="\u904a\u6232\u738b\u65e5\u6587"):
+            error = missing_search_result_error(
+                page,
+                item,
+                "\u904a\u6232\u738b\u65e5\u6587",
+                "No selectable result",
+            )
+        self.assertIsInstance(error, SearchResultMismatch)
+        self.assertIn("TW03-JP053", str(error))
+        self.assertIn("TW03-052", str(error))
+
+    def test_missing_result_still_stops_when_game_category_is_wrong(self):
+        page = Mock()
+        item = Listing(3036, "test", 2, 5, "TW03-JP053", "", "NPR", "", "", "note")
+        with patch("kapaipai_uploader.current_game_filter", return_value="\u5bf6\u53ef\u5922\u7e41\u4e2d"):
+            error = missing_search_result_error(
+                page,
+                item,
+                "\u904a\u6232\u738b\u65e5\u6587",
+                "The category changed",
+            )
+        self.assertIsInstance(error, GameFilterError)
+
+    def test_incomplete_search_ui_is_reloaded_before_retry(self):
+        page = Mock()
+        page.url = "https://trade.kapaipai.tw/search"
+        search_button = Mock()
+        search_box = Mock()
+        selected = SearchResultCandidate("WPP4-JP050", "N", False, Mock())
+        item = Listing(
+            3167,
+            "\u904a\u6232\u738b WPP4-JP050 \u632f\u5b50\u7279\u6025\u50be\u659c\u5feb\u8eca (\u666e\u5361)",
+            4,
+            5,
+            "WPP4-JP050",
+            "\u666e\u5361",
+            "N",
+            "",
+            "",
+            "95\uff5e97\u5206",
+        )
+
+        with (
+            patch("kapaipai_uploader.close_update_dialog"),
+            patch(
+                "kapaipai_uploader.ensure_ygo_filter",
+                side_effect=[GameFilterError("The game filter did not load within 30 seconds after login."), None],
+            ) as ensure_filter,
+            patch("kapaipai_uploader.get_search_box", return_value=search_box),
+            patch("kapaipai_uploader.visible", return_value=search_button),
+            patch("kapaipai_uploader.current_game_filter", return_value="\u904a\u6232\u738b\u65e5\u6587"),
+            patch("kapaipai_uploader.search_result_candidates", return_value=[selected]),
+            patch("kapaipai_uploader.dismiss_game_filter_dialog"),
+        ):
+            rarity = search_and_open(page, item, "\u904a\u6232\u738b\u65e5\u6587")
+
+        self.assertEqual(rarity, "N")
+        self.assertEqual(ensure_filter.call_count, 2)
+        page.goto.assert_called_once_with(
+            "https://trade.kapaipai.tw/search",
+            wait_until="domcontentloaded",
+            timeout=20000,
+        )
+        page.wait_for_timeout.assert_any_call(1500)
 
     def test_same_set_multiple_artworks_require_manual_listing(self):
         item = Listing(

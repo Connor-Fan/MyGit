@@ -48,7 +48,7 @@ CONSIGNOR_RE = re.compile(r"\u5bc4\u8ce3\s*[:\uff1a]\s*([A-Za-z0-9\u3400-\u9fff]
 PRICE_RE = re.compile(r"-?\d+(?:\.\d+)?")
 RESULT_RARITY_RE = re.compile(r"^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 PARENTHESIZED_RE = re.compile(r"[\uff08(]([^()\uff08\uff09]*)[)\uff09]")
-PROGRAM_VERSION = "2026.08.21-unified-17-artwork-ambiguity"
+PROGRAM_VERSION = "2026.08.22-unified-19-search-ui-reload"
 LOGIN_SETTLE_MS = 5000
 SEARCH_UI_TIMEOUT_SECONDS = 30
 SEARCH_MAX_ATTEMPTS = 3
@@ -102,6 +102,10 @@ class CardNotFound(NeedsManualInput):
 
 
 class ManualListingRequired(CardNotFound):
+    pass
+
+
+class SearchResultMismatch(CardNotFound):
     pass
 
 
@@ -835,6 +839,55 @@ def choose_search_result(item: Listing, candidates: list[SearchResultCandidate])
     )
 
 
+def displayed_search_result_codes(page: Page) -> list[str]:
+    """Return visible Kapaipai result codes for mismatch diagnostics."""
+    pattern = re.compile(
+        r"^[A-Z0-9]{2,12}(?:[\uff08(][^()\uff08\uff09]+[)\uff09])?-(?:JP)?\d{3,4}"
+        r"(?:[\uff08(]\u7570\u5716[^()\uff08\uff09]*[)\uff09])?$",
+        re.I,
+    )
+    try:
+        lines = page.locator("body").inner_text().splitlines()
+    except (PlaywrightError, PlaywrightTimeoutError):
+        return []
+    codes: list[str] = []
+    for line in lines:
+        candidate = clean(line).upper()
+        if pattern.fullmatch(candidate) and candidate not in codes:
+            codes.append(candidate)
+    return codes
+
+
+def missing_search_result_error(
+    page: Page,
+    item: Listing,
+    game_filter: str,
+    last_error: str,
+) -> NeedsManualInput:
+    if current_game_filter(page) == game_filter:
+        displayed = displayed_search_result_codes(page)
+        detail = f" Displayed codes: {', '.join(displayed[:5])}." if displayed else ""
+        return SearchResultMismatch(
+            f"Search result mismatch: Kapaipai did not display exact card code "
+            f"{item.card_code}; the displayed card image/title belongs to another card.{detail}"
+        )
+    return GameFilterError(
+        f"The category and search could not be verified for {item.card_code} after "
+        f"{SEARCH_MAX_ATTEMPTS} attempts: {last_error}"
+    )
+
+
+def reload_incomplete_search_page(page: Page) -> None:
+    """Reload the SPA when only the search shell/history rendered."""
+    print("The Kapaipai search interface is incomplete. Reloading the search page...")
+    try:
+        page.goto(SEARCH_URL, wait_until="domcontentloaded", timeout=20000)
+    except PlaywrightTimeoutError:
+        # The SPA may still finish rendering after Playwright's navigation timeout.
+        pass
+    page.wait_for_timeout(1500)
+
+
 def search_and_open(page: Page, item: Listing, game_filter: str) -> str:
     if page.url != SEARCH_URL:
         page.goto(SEARCH_URL, wait_until="domcontentloaded")
@@ -842,6 +895,7 @@ def search_and_open(page: Page, item: Listing, game_filter: str) -> str:
     last_error = "The search result did not become ready."
     for search_attempt in range(1, SEARCH_MAX_ATTEMPTS + 1):
         candidates = []
+        reload_required = False
         try:
             close_update_dialog(page)
             ensure_ygo_filter(page, game_filter, force_reselect=True)
@@ -877,7 +931,10 @@ def search_and_open(page: Page, item: Listing, game_filter: str) -> str:
                 )
         except CardNotFound:
             raise
-        except (GameFilterError, NeedsManualInput, PlaywrightTimeoutError) as error:
+        except GameFilterError as error:
+            last_error = str(error).splitlines()[0]
+            reload_required = "game filter did not load" in last_error.casefold()
+        except (NeedsManualInput, PlaywrightTimeoutError) as error:
             last_error = str(error).splitlines()[0]
         if search_attempt < SEARCH_MAX_ATTEMPTS:
             print(
@@ -885,12 +942,12 @@ def search_and_open(page: Page, item: Listing, game_filter: str) -> str:
                 "Retrying the category and search..."
             )
             dismiss_game_filter_dialog(page)
-            page.wait_for_timeout(700)
+            if reload_required:
+                reload_incomplete_search_page(page)
+            else:
+                page.wait_for_timeout(700)
     if not candidates:
-        raise GameFilterError(
-            f"The category and search could not be verified for {item.card_code} after "
-            f"{SEARCH_MAX_ATTEMPTS} attempts: {last_error}"
-        )
+        raise missing_search_result_error(page, item, game_filter, last_error)
     selected = choose_search_result(item, candidates)
     rarity = selected.rarity
     selected.locator.click()
@@ -1829,6 +1886,7 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
     progress = load_progress(state_path)
     completed = {int(row) for row in progress.get("completed_rows", [])}
     manual_rows = {int(row) for row in progress.get("manual_rows", [])}
+    mismatch_rows = {int(row) for row in progress.get("mismatch_rows", [])}
     verified_rows = {
         int(record["row"])
         for record in progress.get("items", [])
@@ -1844,13 +1902,17 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
         print("Check the prices of these existing products on Kapaipai before continuing.")
     queue = [
         item for item in listings
-        if item.row not in completed and item.row not in manual_rows and item.row >= args.start_row
+        if item.row not in completed
+        and item.row not in manual_rows
+        and item.row not in mismatch_rows
+        and item.row >= args.start_row
     ]
     if args.limit:
         queue = queue[: args.limit]
     print(
         f"Loaded {len(listings)} listings; {len(completed)} completed; "
         f"{len(manual_rows)} reserved for manual listing; "
+        f"{len(mismatch_rows)} skipped for result mismatch; "
         f"{len(queue)} queued for this run."
     )
     if not queue:
@@ -1925,6 +1987,20 @@ def run_upload(source: Path, listings: list[Listing], config: dict[str, Any], ar
                     })
                     save_progress(state_path, progress)
                     print(f"Skipped for manual listing: {error}")
+                    continue
+                except SearchResultMismatch as error:
+                    item.status = "Search result mismatch"
+                    item.message = str(error)
+                    mismatch_rows.add(item.row)
+                    progress["mismatch_rows"] = sorted(mismatch_rows)
+                    progress.setdefault("items", []).append({
+                        **asdict(item),
+                        "time": datetime.now().isoformat(timespec="seconds"),
+                        "program_version": PROGRAM_VERSION,
+                        "verified_fields": False,
+                    })
+                    save_progress(state_path, progress)
+                    print(f"Skipped because the displayed card did not match: {error}")
                     continue
                 except CardNotFound as error:
                     item.status = "Card not found"
